@@ -113,7 +113,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                     height: 50,
                                     color: Colors.black12,
                                     child: Image.network(
-                                      video.thumbnails.mediumResUrl,
+                                      video.thumbnailUrl,
                                       fit: BoxFit.cover,
                                       errorBuilder: (c, o, s) =>
                                           const Icon(Icons.music_note),
@@ -128,7 +128,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  subtitle: Text(video.author),
+                                  subtitle: Text(video.artist),
                                   trailing: IconButton(
                                     icon: const Icon(Icons.play_arrow),
                                     onPressed: () async {
@@ -143,7 +143,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                         ),
                                       );
                                       final error = await player
-                                          .playYoutubeVideo(video.id.value);
+                                          .playYoutubeVideo(video.id);
                                       if (mounted && error != null) {
                                         ScaffoldMessenger.of(
                                           context,

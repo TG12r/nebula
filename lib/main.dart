@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 import 'package:nebula/features/auth/presentation/screens/login_screen.dart';
 
+import 'package:nebula/features/player/data/repositories/player_repository_impl.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -25,7 +27,11 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => PlayerController())],
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => PlayerController(PlayerRepositoryImpl()),
+        ),
+      ],
       child: MaterialApp(
         title: 'Nebula',
         theme: AppTheme.lightTheme,

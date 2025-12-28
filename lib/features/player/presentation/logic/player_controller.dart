@@ -1,141 +1,91 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:audio_session/audio_session.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
+import 'package:flutter/foundation.dart';
+import 'package:nebula/features/player/domain/entities/track.dart';
+import 'package:nebula/features/player/domain/repositories/player_repository.dart';
 
 class PlayerController extends ChangeNotifier {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
+  final PlayerRepository _repository;
 
+  // State
   bool _isPlaying = false;
-  String? _currentTitle;
-  String? _currentArtist;
-  String? _currentThumbnail;
+  Track? _currentTrack;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
-  List<yt_lib.Video> _searchResults = [];
+  List<Track> _searchResults = [];
   bool _isSearching = false;
 
+  // Getters
   bool get isPlaying => _isPlaying;
-  String? get currentTitle => _currentTitle;
-  String? get currentArtist => _currentArtist;
-  String? get currentThumbnail => _currentThumbnail;
+  String? get currentTitle => _currentTrack?.title;
+  String? get currentArtist => _currentTrack?.artist;
+  String? get currentThumbnail => _currentTrack?.thumbnailUrl;
   Duration get duration => _duration;
   Duration get position => _position;
-
-  // Search State Getters
-  List<yt_lib.Video> get searchResults => _searchResults;
+  List<Track> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
 
-  AudioPlayer get audioPlayer => _audioPlayer;
+  // Subscriptions
+  final List<StreamSubscription> _subscriptions = [];
 
-  PlayerController() {
-    _initAudioPlayer();
+  PlayerController(this._repository) {
+    _initStreams();
   }
 
-  Future<void> _initAudioPlayer() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-
-      _audioPlayer.playerStateStream.listen((state) {
-        _isPlaying = state.playing;
-        if (state.processingState == ProcessingState.completed) {
-          _isPlaying = false;
-          _position = Duration.zero;
-        }
+  void _initStreams() {
+    _subscriptions.add(
+      _repository.positionStream.listen((p) {
+        _position = p;
         notifyListeners();
-      });
+      }),
+    );
 
-      _audioPlayer.positionStream.listen((pos) {
-        _position = pos;
+    _subscriptions.add(
+      _repository.durationStream.listen((d) {
+        _duration = d;
         notifyListeners();
-      });
+      }),
+    );
 
-      _audioPlayer.durationStream.listen((d) {
-        _duration = d ?? Duration.zero;
+    _subscriptions.add(
+      _repository.isPlayingStream.listen((p) {
+        _isPlaying = p;
         notifyListeners();
-      });
+      }),
+    );
 
-      debugPrint("Audio player initialized.");
-    } catch (e) {
-      debugPrint("Error initializing audio player: $e");
-    }
+    _subscriptions.add(
+      _repository.currentTrackStream.listen((t) {
+        _currentTrack = t;
+        notifyListeners();
+      }),
+    );
   }
 
+  // Actions forwarded to Repository
   Future<String?> playYoutubeVideo(String videoId) async {
-    try {
-      debugPrint(
-        "Starting playYoutubeVideo (Direct Stream) on: ${Platform.operatingSystem}",
-      );
-
-      // Get Video Info
-      debugPrint("Fetching video info for $videoId...");
-      var video = await _yt.videos.get(videoId);
-
-      _currentTitle = video.title;
-      _currentArtist = video.author;
-      _currentThumbnail = video.thumbnails.mediumResUrl;
-      notifyListeners();
-
-      // Get Manifest with AndroidVR client (User Fix)
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [yt_lib.YoutubeApiClient.androidVr],
-      );
-
-      // Select Audio Stream: Prefer MP4/M4A for better ExoPlayer compatibility
-      yt_lib.AudioOnlyStreamInfo? audioStream;
-      try {
-        audioStream = manifest.audioOnly.firstWhere(
-          (s) =>
-              s.container.name.toLowerCase() == 'mp4' ||
-              s.container.name.toLowerCase() == 'm4a',
-        );
-      } catch (_) {}
-
-      audioStream ??= manifest.audioOnly.withHighestBitrate();
-
-      final streamUrl = audioStream.url.toString();
-      debugPrint("Streaming URL directly: $streamUrl");
-
-      await _audioPlayer.setUrl(streamUrl);
-      await _audioPlayer.play();
-      return null;
-    } catch (e, stackTrace) {
-      debugPrint("Error playing video: $e");
-      debugPrintStack(stackTrace: stackTrace);
-      return "Error: $e";
-    }
+    return await _repository.play(videoId);
   }
 
   Future<void> togglePlay() async {
     if (_isPlaying) {
-      await _audioPlayer.pause();
+      await _repository.pause();
     } else {
-      await _audioPlayer.play();
+      await _repository.resume();
     }
   }
 
   Future<void> seek(Duration position) async {
-    await _audioPlayer.seek(position);
+    await _repository.seek(position);
   }
 
   Future<void> search(String query) async {
-    if (query.trim().isEmpty) return;
-
     _isSearching = true;
     _searchResults = [];
     notifyListeners();
 
     try {
-      final results = await _yt.search.search(query);
-      _searchResults = results.toList();
-    } catch (e) {
-      debugPrint("Error searching: $e");
+      _searchResults = await _repository.search(query);
     } finally {
       _isSearching = false;
       notifyListeners();
@@ -144,8 +94,10 @@ class PlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
-    _yt.close();
+    for (var sub in _subscriptions) {
+      sub.cancel();
+    }
+    _repository.dispose();
     super.dispose();
   }
 }
