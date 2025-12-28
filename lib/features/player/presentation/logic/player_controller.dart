@@ -16,12 +16,19 @@ class PlayerController extends ChangeNotifier {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
+  List<yt_lib.Video> _searchResults = [];
+  bool _isSearching = false;
+
   bool get isPlaying => _isPlaying;
   String? get currentTitle => _currentTitle;
   String? get currentArtist => _currentArtist;
   String? get currentThumbnail => _currentThumbnail;
   Duration get duration => _duration;
   Duration get position => _position;
+
+  // Search State Getters
+  List<yt_lib.Video> get searchResults => _searchResults;
+  bool get isSearching => _isSearching;
 
   AudioPlayer get audioPlayer => _audioPlayer;
 
@@ -115,6 +122,24 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> seek(Duration position) async {
     await _audioPlayer.seek(position);
+  }
+
+  Future<void> search(String query) async {
+    if (query.trim().isEmpty) return;
+
+    _isSearching = true;
+    _searchResults = [];
+    notifyListeners();
+
+    try {
+      final results = await _yt.search.search(query);
+      _searchResults = results.toList();
+    } catch (e) {
+      debugPrint("Error searching: $e");
+    } finally {
+      _isSearching = false;
+      notifyListeners();
+    }
   }
 
   @override

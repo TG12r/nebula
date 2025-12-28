@@ -9,6 +9,8 @@ class NebulaInput extends StatelessWidget {
   final String? technicalSpec;
   final Widget? suffixIcon;
 
+  final ValueChanged<String>? onSubmitted;
+
   const NebulaInput({
     super.key,
     required this.label,
@@ -18,6 +20,7 @@ class NebulaInput extends StatelessWidget {
     this.obscureText = false,
     this.technicalSpec,
     this.suffixIcon,
+    this.onSubmitted,
   });
 
   @override
@@ -55,6 +58,7 @@ class NebulaInput extends StatelessWidget {
             fontFamily: 'Courier New',
             fontWeight: FontWeight.bold,
           ),
+          onFieldSubmitted: onSubmitted,
           decoration: InputDecoration(
             hintText: hintText,
             suffixIcon: suffixIcon,

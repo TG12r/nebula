@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
 import 'package:nebula/features/auth/presentation/screens/register_screen.dart';
-import 'package:nebula/features/home/presentation/screens/home_screen.dart';
+import 'package:nebula/features/home/presentation/screens/main_screen.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -125,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const HomeScreen(),
+                                builder: (_) => const MainScreen(),
                               ),
                             );
                           }
