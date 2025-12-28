@@ -16,10 +16,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
   final DownloadRepository _downloadRepository; // Added
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
-  PlayerRepositoryImpl(
-    this._audioHandler,
-    this._downloadRepository,
-  ); // Updated constructor
+  PlayerRepositoryImpl(this._audioHandler, this._downloadRepository);
 
   @override
   Stream<Duration> get positionStream => AudioService.position;
@@ -64,29 +61,43 @@ class PlayerRepositoryImpl implements PlayerRepository {
     }
   }
 
+  int _queueGenerationId = 0;
+
   @override
   Future<void> setQueue(List<Track> tracks, {int initialIndex = 0}) async {
-    // This might be slow for many tracks as we extract URLs one by one?
-    // TODO: Improve by using lazy loading or generic URIs if possible.
-    // For now, let's extract ONLY the first few or just the initial one?
-    // Actually, extracting ALL URLs upfront for a playlist is bad UX (slow).
-    // Better approach: Just add MediaItems to queue and resolve URL on play?
-    // NebulaAudioHandler needs AudioSources.
-    // We will extract all for now as per current simple architecture.
-    // Optimization: Parallel extraction.
+    // Increment ID to cancel any previous background loading
+    _queueGenerationId++;
+    final currentId = _queueGenerationId;
 
-    final sources = <AudioSource>[];
-    for (var track in tracks) {
-      // Optimization: Don't wait for audio URL for creating source if not immediate?
-      // But just_audio needs uri.
-      // We'll extract sequentially for safety for now, or parallel.
-      final source = await _createAudioSource(track);
-      if (source != null) sources.add(source);
+    if (tracks.isEmpty) return;
+
+    // 1. Immediate: Load ONLY the requested start track to play ASAP
+    final startTrack = tracks[initialIndex];
+    final startSource = await _createAudioSource(startTrack);
+
+    if (startSource != null) {
+      // Set the initial source (clearing previous queue)
+      await _audioHandler.setSourceList([startSource], initialIndex: 0);
+      await _audioHandler.play();
     }
 
-    if (sources.isNotEmpty) {
-      await _audioHandler.setSourceList(sources, initialIndex: initialIndex);
-      await _audioHandler.play();
+    // 2. Background: Load the rest of the queue
+    // We run this without awaiting so UI doesn't block
+    _loadRemainingQueue(tracks, initialIndex, currentId);
+  }
+
+  Future<void> _loadRemainingQueue(
+    List<Track> tracks,
+    int initialIndex,
+    int generationId,
+  ) async {
+    // Load remaining tracks sequentially
+    for (int i = initialIndex + 1; i < tracks.length; i++) {
+      if (_queueGenerationId != generationId) return; // Cancelled
+      final source = await _createAudioSource(tracks[i]);
+      if (source != null && _queueGenerationId == generationId) {
+        await _audioHandler.addAudioSourceToQueue(source);
+      }
     }
   }
 
