@@ -154,7 +154,7 @@ class FavoritesScreen extends StatelessWidget {
                               onTap: () {
                                 context
                                     .read<PlayerController>()
-                                    .playYoutubeVideo(track.id);
+                                    .playYoutubeVideo(track);
                               },
                             ),
                           );

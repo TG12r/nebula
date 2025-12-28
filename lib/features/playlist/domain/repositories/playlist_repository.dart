@@ -9,4 +9,5 @@ abstract class PlaylistRepository {
   Future<List<Track>> getPlaylistTracks(String playlistId);
   Future<void> addTrackToPlaylist(String playlistId, Track track);
   Future<void> removeTrackFromPlaylist(String playlistId, String trackId);
+  Future<List<String>> getPlaylistsContainingTrack(String trackId);
 }

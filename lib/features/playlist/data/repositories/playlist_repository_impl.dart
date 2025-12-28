@@ -107,4 +107,15 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         .eq('playlist_id', playlistId)
         .eq('track_id', trackId);
   }
+
+  @override
+  Future<List<String>> getPlaylistsContainingTrack(String trackId) async {
+    final response = await _supabase
+        .from('playlist_tracks')
+        .select('playlist_id')
+        .eq('track_id', trackId);
+
+    final data = response as List;
+    return data.map((e) => e['playlist_id'] as String).toList();
+  }
 }

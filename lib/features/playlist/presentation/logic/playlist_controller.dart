@@ -94,4 +94,25 @@ class PlaylistController extends ChangeNotifier {
       rethrow;
     }
   }
+
+  Future<List<String>> getPlaylistsContainingTrack(String trackId) async {
+    return await _repository.getPlaylistsContainingTrack(trackId);
+  }
+
+  Future<void> removeTrackFromPlaylist(
+    String playlistId,
+    String trackId,
+  ) async {
+    try {
+      await _repository.removeTrackFromPlaylist(playlistId, trackId);
+      // Optimistic update if viewing
+      if (_currentPlaylistId == playlistId) {
+        _currentPlaylistTracks.removeWhere((t) => t.id == trackId);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("Error removing track: $e");
+      rethrow;
+    }
+  }
 }

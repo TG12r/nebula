@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
@@ -14,6 +15,7 @@ class PlayerController extends ChangeNotifier {
 
   List<Track> _searchResults = [];
   bool _isSearching = false;
+  bool _isBuffering = false;
 
   // Getters
   bool get isPlaying => _isPlaying;
@@ -24,6 +26,7 @@ class PlayerController extends ChangeNotifier {
   Duration get position => _position;
   List<Track> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
+  bool get isBuffering => _isBuffering;
   Track? get currentTrack => _currentTrack;
 
   // Subscriptions
@@ -61,11 +64,32 @@ class PlayerController extends ChangeNotifier {
         notifyListeners();
       }),
     );
+
+    _subscriptions.add(
+      _repository.processingStateStream.listen((state) {
+        _isBuffering =
+            state == AudioProcessingState.buffering ||
+            state == AudioProcessingState.loading;
+        notifyListeners();
+      }),
+    );
   }
 
   // Actions forwarded to Repository
-  Future<String?> playYoutubeVideo(String videoId) async {
-    return await _repository.play(videoId);
+  Future<String?> playYoutubeVideo(Track track) async {
+    return await _repository.play(track);
+  }
+
+  Future<void> playPlaylist(List<Track> tracks) async {
+    await _repository.setQueue(tracks);
+  }
+
+  Future<void> skipToNext() async {
+    await _repository.skipToNext();
+  }
+
+  Future<void> skipToPrevious() async {
+    await _repository.skipToPrevious();
   }
 
   Future<void> togglePlay() async {

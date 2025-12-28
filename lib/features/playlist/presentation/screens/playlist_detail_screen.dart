@@ -114,79 +114,121 @@ class PlaylistDetailScreen extends StatelessWidget {
                       if (playlistCtrl.currentPlaylistTracks.isEmpty) {
                         return Center(
                           child: Text(
-                            'EMPTY PLAYLIST',
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  fontFamily: 'Courier New',
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withOpacity(0.3),
-                                ),
+                            "EMPTY PLAYLIST",
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontFamily: 'Courier New',
+                            ),
                           ),
                         );
                       }
 
-                      return ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                        itemCount: playlistCtrl.currentPlaylistTracks.length,
-                        itemBuilder: (context, index) {
-                          final track =
-                              playlistCtrl.currentPlaylistTracks[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.1),
-                              ),
-                              color: Colors.white.withOpacity(0.05),
+                      return Column(
+                        children: [
+                          // Play Button Header
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24.0,
+                              vertical: 8.0,
                             ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.all(8),
-                              leading: Container(
-                                width: 50,
-                                height: 50,
-                                color: AppTheme.cmfDarkGrey,
-                                child: track.thumbnailUrl.isNotEmpty
-                                    ? Image.network(
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.play_arrow,
+                                  color: Colors.black,
+                                ),
+                                label: const Text(
+                                  "PLAY ALL",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontFamily: 'Courier New',
+                                  ),
+                                ),
+                                onPressed: () {
+                                  context.read<PlayerController>().playPlaylist(
+                                    playlistCtrl.currentPlaylistTracks,
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+
+                          // Tracks
+                          Expanded(
+                            child: ReorderableListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                              itemCount:
+                                  playlistCtrl.currentPlaylistTracks.length,
+                              onReorder: (oldIndex, newIndex) {
+                                // Call controller to reorder
+                                // playlistCtrl.reorder(oldIndex, newIndex);
+                                // For now, implementing local reorder logic here or in controller
+                                // Note: newIndex > oldIndex needs adjustment
+                                if (newIndex > oldIndex) newIndex -= 1;
+                                final item = playlistCtrl.currentPlaylistTracks
+                                    .removeAt(oldIndex);
+                                playlistCtrl.currentPlaylistTracks.insert(
+                                  newIndex,
+                                  item,
+                                );
+                                // TODO: Persist to DB
+                              },
+                              itemBuilder: (context, index) {
+                                final track =
+                                    playlistCtrl.currentPlaylistTracks[index];
+                                // Key is required for ReorderableListView
+                                return Container(
+                                  key: ValueKey(track.id),
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.white10),
+                                    color: Colors.white.withOpacity(0.05),
+                                  ),
+                                  child: ListTile(
+                                    leading: Container(
+                                      width: 40,
+                                      height: 40,
+                                      color: Colors.white10,
+                                      child: Image.network(
                                         track.thumbnailUrl,
                                         fit: BoxFit.cover,
-                                      )
-                                    : const Icon(
-                                        Icons.music_note,
-                                        color: Colors.white,
+                                        cacheWidth:
+                                            100, // Performance optimization
                                       ),
-                              ),
-                              title: Text(
-                                track.title.toUpperCase(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Courier New',
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              subtitle: Text(
-                                track.artist.toUpperCase(),
-                                style: TextStyle(
-                                  fontFamily: 'Courier New',
-                                  color: Colors.white.withOpacity(0.6),
-                                  fontSize: 12,
-                                ),
-                              ),
-                              // Remove from Playlist button (Optional)
-                              // trailing: IconButton(...)
-                              onTap: () {
-                                context
-                                    .read<PlayerController>()
-                                    .playYoutubeVideo(track.id);
+                                    ),
+                                    title: Text(
+                                      track.title.toUpperCase(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'Courier New',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    // Drag handle is automatic on trailing, but we can customize
+                                    trailing: const Icon(
+                                      Icons.drag_handle,
+                                      color: Colors.white24,
+                                    ),
+                                  ),
+                                );
                               },
                             ),
-                          );
-                        },
+                          ),
+                        ],
                       );
                     },
                   ),

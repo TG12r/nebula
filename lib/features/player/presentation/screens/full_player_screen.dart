@@ -257,7 +257,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         color: Colors.white,
                         size: 36,
                       ),
-                      onPressed: () {},
+                      onPressed: () =>
+                          context.read<PlayerController>().skipToPrevious(),
                     ),
                     Container(
                       width: 80,
@@ -288,7 +289,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         color: Colors.white,
                         size: 36,
                       ),
-                      onPressed: () {},
+                      onPressed: () =>
+                          context.read<PlayerController>().skipToNext(),
                     ),
 
                     // Balance Spacer
