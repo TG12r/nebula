@@ -317,6 +317,166 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
               ],
             ),
           ),
+
+          // Queue Drawer at Bottom (Draggable)
+          DraggableScrollableSheet(
+            initialChildSize: 0.15, // Increased visibility
+            minChildSize: 0.12,
+            maxChildSize: 0.6,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.cmfDarkGrey.withOpacity(0.95),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 10,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                child: Consumer<PlayerController>(
+                  builder: (context, player, _) {
+                    final queue = player.queue;
+
+                    return CustomScrollView(
+                      controller: scrollController,
+                      slivers: [
+                        // Handle & Header
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Handle
+                              Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16.0,
+                                  ),
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white24,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              // Header
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24.0,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      'UP NEXT',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: AppTheme.nebulaPurple,
+                                            letterSpacing: 2.0,
+                                          ),
+                                    ),
+                                    const Spacer(),
+                                    // Could add "Clear Queue" here
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Queue List or Empty State
+                        if (queue.isEmpty)
+                          SliverFillRemaining(
+                            child: Center(
+                              child: Text(
+                                'Queue is empty',
+                                style: TextStyle(
+                                  fontFamily: 'Courier New',
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final track = queue[index];
+                              final isCurrent =
+                                  track.id == player.currentTrack?.id;
+
+                              return ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                ),
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Image.network(
+                                    track.thumbnailUrl,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        Container(color: Colors.white12),
+                                  ),
+                                ),
+                                title: Text(
+                                  track.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: isCurrent
+                                        ? AppTheme.nebulaPurple
+                                        : Colors.white,
+                                    fontFamily: 'Courier New',
+                                    fontWeight: isCurrent
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  track.artist,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.5),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(
+                                    Icons.remove_circle_outline,
+                                    color: Colors.white24,
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      player.removeFromQueue(index),
+                                ),
+                              );
+                            }, childCount: queue.length),
+                          ),
+
+                        // Bottom Padding for safe scrolling
+                        const SliverToBoxAdapter(child: SizedBox(height: 50)),
+                      ],
+                    );
+                  },
+                ),
+              );
+            },
+          ),
         ],
       ),
     );

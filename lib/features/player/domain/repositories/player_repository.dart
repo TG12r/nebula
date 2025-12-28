@@ -18,5 +18,10 @@ abstract class PlayerRepository {
   Stream<Duration> get durationStream;
   Stream<bool> get isPlayingStream;
   Stream<Track?> get currentTrackStream;
+  Stream<List<Track>> get queueStream; // New
   Stream<AudioProcessingState> get processingStateStream;
+
+  // Queue Management
+  Future<void> addToQueue(Track track);
+  Future<void> removeFromQueue(int index);
 }

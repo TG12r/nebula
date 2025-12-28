@@ -17,6 +17,8 @@ class PlayerController extends ChangeNotifier {
   bool _isSearching = false;
   bool _isBuffering = false;
 
+  List<Track> _queue = [];
+
   // Getters
   bool get isPlaying => _isPlaying;
   String? get currentTitle => _currentTrack?.title;
@@ -28,6 +30,7 @@ class PlayerController extends ChangeNotifier {
   bool get isSearching => _isSearching;
   bool get isBuffering => _isBuffering;
   Track? get currentTrack => _currentTrack;
+  List<Track> get queue => _queue;
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];
@@ -73,6 +76,13 @@ class PlayerController extends ChangeNotifier {
         notifyListeners();
       }),
     );
+
+    _subscriptions.add(
+      _repository.queueStream.listen((q) {
+        _queue = q;
+        notifyListeners();
+      }),
+    );
   }
 
   // Actions forwarded to Repository
@@ -82,6 +92,14 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> playPlaylist(List<Track> tracks) async {
     await _repository.setQueue(tracks);
+  }
+
+  Future<void> addToQueue(Track track) async {
+    await _repository.addToQueue(track);
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    await _repository.removeFromQueue(index);
   }
 
   Future<void> skipToNext() async {

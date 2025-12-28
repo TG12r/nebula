@@ -121,85 +121,134 @@ class _SearchScreenState extends State<SearchScreen> {
                                     _loadingTrackId == video.id ||
                                     isBufferingCurrent;
 
-                                return ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  leading: Container(
-                                    width: 50,
-                                    height: 50,
-                                    color: Colors.black12,
-                                    child: Stack(
-                                      alignment: Alignment.center,
+                                return Dismissible(
+                                  key: Key(video.id),
+                                  direction: DismissDirection.startToEnd,
+                                  background: Container(
+                                    alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.only(left: 20.0),
+                                    color: AppTheme.nebulaPurple,
+                                    child: const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.start,
                                       children: [
-                                        Image.network(
-                                          video.thumbnailUrl,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (c, o, s) =>
-                                              const Icon(Icons.music_note),
+                                        Icon(
+                                          Icons.queue_music,
+                                          color: Colors.white,
                                         ),
-                                        if (isLoading)
-                                          Container(
-                                            color: Colors.black54,
-                                            child: const Center(
-                                              child: SizedBox(
-                                                width: 20,
-                                                height: 20,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      color: Colors.white,
-                                                    ),
-                                              ),
-                                            ),
+                                        SizedBox(width: 10),
+                                        Text(
+                                          'ADD TO QUEUE',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontFamily: 'Courier New',
+                                            fontWeight: FontWeight.bold,
                                           ),
+                                        ),
                                       ],
                                     ),
                                   ),
-                                  title: Text(
-                                    video.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontFamily: 'Courier New',
-                                      fontWeight: FontWeight.bold,
+                                  confirmDismiss: (direction) async {
+                                    if (direction ==
+                                        DismissDirection.startToEnd) {
+                                      await player.addToQueue(video);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Added "${video.title}" to queue',
+                                          ),
+                                          duration: const Duration(seconds: 2),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                    return false; // Don't remove from list
+                                  },
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
                                     ),
-                                  ),
-                                  subtitle: Text(video.artist),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(
-                                          isLoading
-                                              ? Icons.hourglass_empty
-                                              : Icons.play_arrow,
-                                        ),
-                                        onPressed: isLoading
-                                            ? null
-                                            : () => _playTrack(
-                                                context,
-                                                player,
-                                                video,
-                                                openPlayer: false,
+                                    leading: Container(
+                                      width: 50,
+                                      height: 50,
+                                      color: Colors.black12,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          Image.network(
+                                            video.thumbnailUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, o, s) =>
+                                                const Icon(Icons.music_note),
+                                          ),
+                                          if (isLoading)
+                                            Container(
+                                              color: Colors.black54,
+                                              child: const Center(
+                                                child: SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                ),
                                               ),
+                                            ),
+                                        ],
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.playlist_add),
-                                        onPressed: () =>
-                                            _showTrackMenu(context, video),
-                                      ),
-                                    ],
-                                  ),
-                                  onTap: isLoading
-                                      ? null
-                                      : () => _playTrack(
-                                          context,
-                                          player,
-                                          video,
-                                          openPlayer: true,
+                                    ),
+                                    title: Text(
+                                      video.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontFamily: 'Courier New',
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                    subtitle: Text(video.artist),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: Icon(
+                                            isLoading
+                                                ? Icons.hourglass_empty
+                                                : Icons.play_arrow,
+                                          ),
+                                          onPressed: isLoading
+                                              ? null
+                                              : () => _playTrack(
+                                                  context,
+                                                  player,
+                                                  video,
+                                                  openPlayer: false,
+                                                ),
                                         ),
+                                        IconButton(
+                                          icon: const Icon(Icons.playlist_add),
+                                          onPressed: () =>
+                                              _showTrackMenu(context, video),
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: isLoading
+                                        ? null
+                                        : () => _playTrack(
+                                            context,
+                                            player,
+                                            video,
+                                            openPlayer: true,
+                                          ),
+                                  ),
                                 );
                               },
                             ),

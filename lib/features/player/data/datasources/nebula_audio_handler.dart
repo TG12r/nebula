@@ -6,6 +6,9 @@ import 'package:just_audio/just_audio.dart';
 class NebulaAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
+  // Playlist Source
+  final _playlist = ConcatenatingAudioSource(children: []);
+
   NebulaAudioHandler() {
     _init();
   }
@@ -14,12 +17,24 @@ class NebulaAudioHandler extends BaseAudioHandler {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
 
+    // Load empty playlist to start (or handle initial load differently)
+    // We don't set source here immediately to avoid empty playlist error if not handled
+    // But usually we want the player to be ready.
+    // For now, we wait for the first 'play' or 'setQueue' to set the source.
+
     // Broadcast MediaItem (Title, Artist, Art)
     _player.sequenceStateStream.listen((sequenceState) {
       final sequence = sequenceState?.sequence;
       if (sequence == null || sequence.isEmpty) return;
-      final tag = sequenceState!.currentSource!.tag as MediaItem;
-      mediaItem.add(tag);
+
+      // Update Queue in AudioService
+      final queue = sequence.map((source) => source.tag as MediaItem).toList();
+      this.queue.add(queue);
+
+      final tag = sequenceState!.currentSource?.tag as MediaItem?;
+      if (tag != null) {
+        mediaItem.add(tag);
+      }
     });
 
     // Unified State Broadcaster
@@ -66,8 +81,34 @@ class NebulaAudioHandler extends BaseAudioHandler {
 
   AudioPlayer get internalPlayer => _player;
 
-  Future<void> setSource(AudioSource source) async {
-    await _player.setAudioSource(source);
+  /// Sets a list of sources as the current queue and plays the first one (or index)
+  Future<void> setSourceList(
+    List<AudioSource> sources, {
+    int initialIndex = 0,
+  }) async {
+    await _playlist.clear();
+    await _playlist.addAll(sources);
+    await _player.setAudioSource(
+      _playlist,
+      initialIndex: initialIndex,
+      initialPosition: Duration.zero,
+    );
+  }
+
+  /// Adds a single source to the end of the queue
+  Future<void> addAudioSourceToQueue(AudioSource source) async {
+    await _playlist.add(source);
+    // If player was idle (empty queue), this might need to trigger source setting?
+    // If _player has _playlist set, adding to it works dynamically.
+    if (_player.audioSource == null) {
+      await _player.setAudioSource(_playlist);
+    }
+  }
+
+  /// Removes item at index
+  @override
+  Future<void> removeQueueItemAt(int index) async {
+    await _playlist.removeAt(index);
   }
 
   // --- BaseAudioHandler Overrides (System Controls) ---
@@ -83,4 +124,10 @@ class NebulaAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> stop() => _player.stop();
+
+  @override
+  Future<void> skipToNext() => _player.seekToNext();
+
+  @override
+  Future<void> skipToPrevious() => _player.seekToPrevious();
 }
