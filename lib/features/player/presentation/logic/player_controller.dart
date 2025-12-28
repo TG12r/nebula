@@ -24,6 +24,7 @@ class PlayerController extends ChangeNotifier {
   Duration get position => _position;
   List<Track> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
+  Track? get currentTrack => _currentTrack;
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];

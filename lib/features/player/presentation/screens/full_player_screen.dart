@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
+import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -13,7 +14,6 @@ class FullPlayerScreen extends StatefulWidget {
 }
 
 class _FullPlayerScreenState extends State<FullPlayerScreen> {
-  @override
   @override
   Widget build(BuildContext context) {
     // We rely on Selectors for updates, so we don't need context.watch here
@@ -223,6 +223,34 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
+                    // Like Button
+                    Consumer2<PlayerController, FavoritesController>(
+                      builder: (context, player, favorites, _) {
+                        final track = player.currentTrack;
+                        final isLiked =
+                            track != null && favorites.isFavorite(track.id);
+                        return IconButton(
+                          icon: Text(
+                            '<3',
+                            style: TextStyle(
+                              fontFamily: 'Courier New',
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -1.0,
+                              fontSize: 22,
+                              color: isLiked
+                                  ? AppTheme.nebulaPurple
+                                  : Colors.white,
+                            ),
+                          ),
+                          onPressed: () {
+                            if (track != null) {
+                              favorites.toggleFavorite(track);
+                            }
+                          },
+                        );
+                      },
+                    ),
+
                     IconButton(
                       icon: const Icon(
                         Icons.skip_previous,
@@ -262,6 +290,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                       ),
                       onPressed: () {},
                     ),
+
+                    // Balance Spacer
+                    const SizedBox(width: 48),
                   ],
                 ),
 

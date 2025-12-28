@@ -8,6 +8,13 @@ import 'package:nebula/features/auth/presentation/screens/login_screen.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:nebula/features/player/data/datasources/nebula_audio_handler.dart';
 import 'package:nebula/features/player/data/repositories/player_repository_impl.dart';
+import 'package:nebula/features/player/domain/repositories/player_repository.dart'; // Added
+import 'package:nebula/features/favorites/data/repositories/favorites_repository_impl.dart';
+import 'package:nebula/features/favorites/domain/repositories/favorites_repository.dart'; // Added
+import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
+import 'package:nebula/features/playlist/data/repositories/playlist_repository_impl.dart'; // Added
+import 'package:nebula/features/playlist/domain/repositories/playlist_repository.dart'; // Added
+import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart'; // Added
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,8 +48,29 @@ class MainApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => PlayerController(PlayerRepositoryImpl(audioHandler)),
+        // Repositories
+        Provider<PlayerRepository>(
+          create: (_) => PlayerRepositoryImpl(audioHandler),
+        ),
+        Provider<FavoritesRepository>(
+          create: (_) => FavoritesRepositoryImpl(Supabase.instance.client),
+        ),
+        Provider<PlaylistRepository>(
+          create: (_) => PlaylistRepositoryImpl(Supabase.instance.client),
+        ),
+
+        // Controllers
+        ChangeNotifierProvider<PlayerController>(
+          create: (context) =>
+              PlayerController(context.read<PlayerRepository>()),
+        ),
+        ChangeNotifierProvider<FavoritesController>(
+          create: (context) =>
+              FavoritesController(context.read<FavoritesRepository>()),
+        ),
+        ChangeNotifierProvider<PlaylistController>(
+          create: (context) =>
+              PlaylistController(context.read<PlaylistRepository>()),
         ),
       ],
       child: MaterialApp(
