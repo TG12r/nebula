@@ -4,6 +4,9 @@ import 'package:nebula/features/home/presentation/screens/search_screen.dart';
 import 'package:nebula/features/library/presentation/screens/library_screen.dart';
 import 'package:nebula/features/player/presentation/widgets/mini_player.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
+import 'package:nebula/features/settings/presentation/screens/settings_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:nebula/features/auth/data/auth_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -49,6 +52,71 @@ class _MainScreenState extends State<MainScreen> {
             child: SafeArea(top: false, child: MiniPlayer()),
           ),
         ],
+      ),
+      endDrawer: Drawer(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 40, 24, 20),
+                child: Text(
+                  'MENU',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    letterSpacing: 2.0,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              const Divider(color: Colors.white10),
+              ListTile(
+                leading: const Icon(
+                  Icons.settings_outlined,
+                  color: Colors.white,
+                ),
+                title: const Text(
+                  'SETTINGS',
+                  style: TextStyle(
+                    fontFamily: 'Courier New',
+                    color: Colors.white,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // Close drawer
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+              ),
+              const Spacer(),
+              const Divider(color: Colors.white10),
+
+              // Logout Tile
+              Consumer<AuthService>(
+                builder: (context, auth, _) => ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.redAccent),
+                  title: const Text(
+                    'LOGOUT',
+                    style: TextStyle(
+                      fontFamily: 'Courier New',
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await auth.signOut();
+                    // Navigation to login is handled by AuthService stream in Main/Router
+                    // But if MainScreen is top level, we might need to rely on stream listener in main.dart
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
       ),
       bottomNavigationBar: NavigationBarTheme(
         data: NavigationBarThemeData(

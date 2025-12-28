@@ -21,11 +21,14 @@ class PlayerRepositoryImpl implements PlayerRepository {
   }
 
   void _initAutoAdvance() {
-    _playbackStateSubscription = _audioHandler.playbackState.listen((state) {
-      if (state.processingState == AudioProcessingState.completed) {
-        skipToNext();
-      }
-    });
+    _playbackStateSubscription = _audioHandler.playbackState
+        .map((s) => s.processingState)
+        .distinct()
+        .listen((processingState) {
+          if (processingState == AudioProcessingState.completed) {
+            skipToNext();
+          }
+        });
   }
 
   @override

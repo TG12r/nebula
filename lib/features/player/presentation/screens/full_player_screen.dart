@@ -68,38 +68,53 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
 
                 const Spacer(),
 
-                // Artwork (Selector for thumbnail only)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40.0),
-                  child: Hero(
-                    tag: 'album_art',
-                    child: AspectRatio(
-                      aspectRatio: 1.0,
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: AppTheme.cmfDarkGrey,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppTheme.nebulaPurple.withOpacity(0.2),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
+                Expanded(
+                  flex: 4,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40.0),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 350,
+                          maxHeight: 350,
                         ),
-                        child: Selector<PlayerController, String?>(
-                          selector: (_, p) => p.currentThumbnail,
-                          builder: (_, thumbnail, __) {
-                            return thumbnail != null
-                                ? Image.network(thumbnail, fit: BoxFit.cover)
-                                : const Center(
-                                    child: Icon(
-                                      FontAwesomeIcons.music,
-                                      color: Colors.white,
-                                      size: 40,
+                        child: Hero(
+                          tag: 'album_art',
+                          child: AspectRatio(
+                            aspectRatio: 1.0,
+                            child: Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: AppTheme.cmfDarkGrey,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.nebulaPurple.withOpacity(
+                                      0.2,
                                     ),
-                                  );
-                          },
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: Selector<PlayerController, String?>(
+                                selector: (_, p) => p.currentThumbnail,
+                                builder: (_, thumbnail, __) {
+                                  return thumbnail != null
+                                      ? Image.network(
+                                          thumbnail,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : const Center(
+                                          child: Icon(
+                                            FontAwesomeIcons.music,
+                                            color: Colors.white,
+                                            size: 40,
+                                          ),
+                                        );
+                                },
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),

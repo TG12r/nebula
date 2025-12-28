@@ -33,17 +33,21 @@ class HomeFeedScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.2),
+                InkWell(
+                  onTap: () => Scaffold.of(context).openEndDrawer(),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.2),
+                      ),
                     ),
+                    child: const Icon(Icons.menu),
                   ),
-                  child: const Icon(Icons.menu),
                 ),
               ],
             ),

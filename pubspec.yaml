@@ -13,6 +13,7 @@ dependencies:
   supabase_flutter: ^2.0.0
   # Audio Core
   just_audio: ^0.9.36
+  just_audio_windows: ^0.2.1
   audio_service: ^0.18.12
   rxdart: ^0.27.7
   # Source

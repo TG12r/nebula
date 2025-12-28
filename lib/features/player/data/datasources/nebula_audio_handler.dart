@@ -22,9 +22,11 @@ class NebulaAudioHandler extends BaseAudioHandler {
       mediaItem.add(tag);
     });
 
-    // Broadcast PlaybackState (Playing, Buffering, Position, Controls)
-    _player.playbackEventStream.listen((event) {
+    // Unified State Broadcaster
+    void broadcastState([PlaybackEvent? event]) {
       final playing = _player.playing;
+      final queueIndex = event?.currentIndex ?? _player.currentIndex;
+
       playbackState.add(
         playbackState.value.copyWith(
           controls: [
@@ -49,10 +51,15 @@ class NebulaAudioHandler extends BaseAudioHandler {
           updatePosition: _player.position,
           bufferedPosition: _player.bufferedPosition,
           speed: _player.speed,
-          queueIndex: event.currentIndex,
+          queueIndex: queueIndex,
         ),
       );
-    });
+    }
+
+    // Listen to all relevant streams
+    _player.playbackEventStream.listen(broadcastState);
+    _player.playingStream.listen((_) => broadcastState());
+    _player.processingStateStream.listen((_) => broadcastState());
   }
 
   // --- Public Methods for Repository ---
