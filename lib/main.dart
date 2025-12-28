@@ -55,6 +55,8 @@ Future<void> main() async {
   // Initialize Hive for Downloads
   await Hive.initFlutter();
   final downloadsBox = await Hive.openBox('downloads');
+  // Initialize Hive for Playlists
+  final playlistBox = await Hive.openBox('playlists');
 
   // Initialize Download Repository
   final downloadRepo = DownloadRepositoryImpl(downloadsBox);
@@ -64,6 +66,7 @@ Future<void> main() async {
       audioHandler: audioHandler,
       settingsRepository: settingsRepo,
       downloadRepository: downloadRepo,
+      playlistBox: playlistBox,
     ),
   );
 }
@@ -74,12 +77,14 @@ class MainApp extends StatelessWidget {
   final NebulaAudioHandler audioHandler;
   final SettingsRepository settingsRepository;
   final DownloadRepository downloadRepository;
+  final Box playlistBox;
 
   const MainApp({
     super.key,
     required this.audioHandler,
     required this.settingsRepository,
     required this.downloadRepository,
+    required this.playlistBox,
   });
 
   @override
@@ -98,7 +103,8 @@ class MainApp extends StatelessWidget {
           create: (_) => FavoritesRepositoryImpl(Supabase.instance.client),
         ),
         Provider<PlaylistRepository>(
-          create: (_) => PlaylistRepositoryImpl(Supabase.instance.client),
+          create: (_) =>
+              PlaylistRepositoryImpl(Supabase.instance.client, playlistBox),
         ),
 
         Provider<AuthService>(

@@ -63,15 +63,13 @@ class _MainScreenState extends State<MainScreen> {
                 padding: const EdgeInsets.fromLTRB(24, 40, 24, 20),
                 child: Consumer<AuthService>(
                   builder: (context, auth, _) {
-                    final metadata =
-                        auth.currentUser?.userMetadata; // Correct property?
+                    final metadata = auth.currentUser?.userMetadata;
+
                     final username =
-                        metadata?['username'] as String? ??
-                        metadata?['name'] as String? ??
+                        metadata?['full_name'] as String? ??
                         auth.currentUser?.email?.split('@')[0] ??
                         'Guest';
 
-                    // final email = auth.currentUser?.email ?? 'No Email';
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

@@ -10,4 +10,17 @@ class Playlist {
     required this.userId,
     this.trackCount = 0,
   });
+
+  Map<String, dynamic> toMap() {
+    return {'id': id, 'name': name, 'userId': userId, 'trackCount': trackCount};
+  }
+
+  factory Playlist.fromMap(Map<String, dynamic> map) {
+    return Playlist(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      userId: map['userId'] ?? '',
+      trackCount: map['trackCount'] ?? 0,
+    );
+  }
 }
