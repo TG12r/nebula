@@ -17,6 +17,9 @@ import 'package:nebula/features/playlist/domain/repositories/playlist_repository
 import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
 import 'package:nebula/features/home/presentation/screens/main_screen.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
+import 'package:nebula/features/settings/data/repositories/settings_repository_impl.dart'; // Added
+import 'package:nebula/features/settings/domain/repositories/settings_repository.dart'; // Added
+import 'package:nebula/features/settings/presentation/logic/settings_controller.dart'; // Added
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,15 +39,24 @@ Future<void> main() async {
     ),
   );
 
-  runApp(MainApp(audioHandler: audioHandler));
+  // Initialize Settings Repository (Persistence)
+  final settingsRepo = SettingsRepositoryImpl();
+  await settingsRepo.init();
+
+  runApp(MainApp(audioHandler: audioHandler, settingsRepository: settingsRepo));
 }
 
 final supabase = Supabase.instance.client;
 
 class MainApp extends StatelessWidget {
   final NebulaAudioHandler audioHandler;
+  final SettingsRepository settingsRepository;
 
-  const MainApp({super.key, required this.audioHandler});
+  const MainApp({
+    super.key,
+    required this.audioHandler,
+    required this.settingsRepository,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +66,10 @@ class MainApp extends StatelessWidget {
         Provider<PlayerRepository>(
           create: (_) => PlayerRepositoryImpl(audioHandler),
         ),
+        Provider<SettingsRepository>.value(
+          value: settingsRepository,
+        ), // Injected value
+
         Provider<FavoritesRepository>(
           create: (_) => FavoritesRepositoryImpl(Supabase.instance.client),
         ),
@@ -66,10 +82,21 @@ class MainApp extends StatelessWidget {
         ),
 
         // Controllers
+        ChangeNotifierProvider<SettingsController>(
+          create: (context) {
+            final controller = SettingsController(
+              context.read<SettingsRepository>(),
+            );
+            controller.loadSettings(); // Load initial state
+            return controller;
+          },
+        ),
+
         ChangeNotifierProvider<PlayerController>(
           create: (context) =>
               PlayerController(context.read<PlayerRepository>()),
         ),
+
         ChangeNotifierProvider<FavoritesController>(
           create: (context) =>
               FavoritesController(context.read<FavoritesRepository>()),
@@ -79,10 +106,16 @@ class MainApp extends StatelessWidget {
               PlaylistController(context.read<PlaylistRepository>()),
         ),
       ],
-      child: MaterialApp(
-        title: 'Nebula',
-        theme: AppTheme.lightTheme,
-        home: const AuthWrapper(),
+      child: Consumer<SettingsController>(
+        builder: (context, settings, child) {
+          return MaterialApp(
+            title: 'Nebula',
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            home: const AuthWrapper(),
+          );
+        },
       ),
     );
   }

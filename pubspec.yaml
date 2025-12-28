@@ -24,6 +24,7 @@ dependencies:
   font_awesome_flutter: ^10.6.0 # For player icons
   http: ^1.6.0
   path_provider: ^2.1.5
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

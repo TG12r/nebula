@@ -71,15 +71,15 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const Divider(color: Colors.white10),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.settings_outlined,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
-                title: const Text(
+                title: Text(
                   'SETTINGS',
                   style: TextStyle(
                     fontFamily: 'Courier New',
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 onTap: () {
