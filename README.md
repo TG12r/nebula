@@ -2,7 +2,7 @@
 
 **Music. Open. Beautiful.**
 
-Nebula is an open-source music streaming application designed for those who appreciate aesthetics as much as audio. Built with **Flutter** and **Supabase**, inspired by the industrial design language of CMF.
+Nebula is an open-source music streaming application designed for those who appreciate privacy and aesthetics as much as audio. Built with **Flutter** and **Supabase**, inspired by the industrial design language of CMF.
 
 ### Why Nebula?
 *   **Zero Ads, Zero Cost:** Open source forever.
