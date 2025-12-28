@@ -25,8 +25,13 @@ import 'package:nebula/features/downloads/data/repositories/download_repository_
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 
+import 'package:nebula/core/services/notification_service.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Notifications
+  await NotificationService().init();
 
   await Supabase.initialize(
     url: AppEnv.supabaseUrl,
