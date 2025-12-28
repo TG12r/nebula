@@ -16,6 +16,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Disable Automatic Signing
+        run: |
+          sed -i '' 's/ProvisioningStyle = Automatic;/ProvisioningStyle = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DevelopmentTeam = .*/DevelopmentTeam = "";/g' ios/Runner.xcodeproj/project.pbxproj
+
       - name: Build IPA (No Code Signing)
         run: flutter build ios --release --no-codesign
 
