@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nebula/core/config/app_env.dart';
 import 'package:nebula/core/theme/app_theme.dart';
+import 'package:nebula/features/auth/presentation/screens/login_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,9 +25,7 @@ class MainApp extends StatelessWidget {
     return MaterialApp(
       title: 'Nebula',
       theme: AppTheme.lightTheme,
-      home: const Scaffold(
-        body: Center(child: Text('Nebula Environment Configured!')),
-      ),
+      home: const LoginScreen(),
     );
   }
 }
