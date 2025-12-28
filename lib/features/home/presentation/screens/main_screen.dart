@@ -61,12 +61,44 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 40, 24, 20),
-                child: Text(
-                  'MENU',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    letterSpacing: 2.0,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                child: Consumer<AuthService>(
+                  builder: (context, auth, _) {
+                    final metadata =
+                        auth.currentUser?.userMetadata; // Correct property?
+                    final username =
+                        metadata?['username'] as String? ??
+                        metadata?['name'] as String? ??
+                        auth.currentUser?.email?.split('@')[0] ??
+                        'Guest';
+
+                    // final email = auth.currentUser?.email ?? 'No Email';
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ACCOUNT',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                letterSpacing: 2.0,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          username.toUpperCase(),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                fontFamily: 'Courier New',
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18, // Slightly smaller to fit
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
               const Divider(color: Colors.white10),

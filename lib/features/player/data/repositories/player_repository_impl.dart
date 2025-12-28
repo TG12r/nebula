@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
@@ -8,11 +9,17 @@ import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
+import 'package:nebula/features/downloads/domain/repositories/download_repository.dart'; // Added
+
 class PlayerRepositoryImpl implements PlayerRepository {
   final NebulaAudioHandler _audioHandler;
+  final DownloadRepository _downloadRepository; // Added
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
-  PlayerRepositoryImpl(this._audioHandler);
+  PlayerRepositoryImpl(
+    this._audioHandler,
+    this._downloadRepository,
+  ); // Updated constructor
 
   @override
   Stream<Duration> get positionStream => AudioService.position;
@@ -152,6 +159,22 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   Future<AudioSource?> _createAudioSource(Track track) async {
     try {
+      // 1. Check Offline File
+      final localPath = _downloadRepository.getLocalPath(track.id);
+      if (localPath != null && File(localPath).existsSync()) {
+        return AudioSource.file(
+          localPath,
+          tag: MediaItem(
+            id: track.id,
+            title: track.title,
+            artist: track.artist,
+            artUri: Uri.parse(track.thumbnailUrl),
+            duration: track.duration,
+          ),
+        );
+      }
+
+      // 2. Stream Online
       final manifest = await _yt.videos.streamsClient.getManifest(
         track.id,
         ytClients: [yt_lib.YoutubeApiClient.androidVr],

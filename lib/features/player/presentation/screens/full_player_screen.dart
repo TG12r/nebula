@@ -5,6 +5,7 @@ import 'package:nebula/features/player/presentation/logic/player_controller.dart
 import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
+import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -238,6 +239,58 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
+                    // Download Button
+                    Consumer<DownloadController>(
+                      builder: (context, downloader, _) {
+                        final track = context
+                            .read<PlayerController>()
+                            .currentTrack;
+                        if (track == null)
+                          return const SizedBox(width: 48); // Placeholder
+
+                        final isDownloaded = downloader.isDownloaded(track.id);
+                        final isDownloading = downloader.isDownloading(
+                          track.id,
+                        );
+                        final progress = downloader.getProgress(track.id);
+
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                isDownloaded
+                                    ? Icons.offline_pin
+                                    : Icons.download,
+                                color: isDownloaded
+                                    ? AppTheme.nebulaPurple
+                                    : (isDownloading
+                                          ? Colors.white38
+                                          : Colors.white),
+                                size: 22,
+                              ),
+                              onPressed: isDownloaded
+                                  ? () => downloader.deleteTrack(track.id)
+                                  : (isDownloading
+                                        ? null
+                                        : () =>
+                                              downloader.downloadTrack(track)),
+                            ),
+                            if (isDownloading)
+                              SizedBox(
+                                width: 30,
+                                height: 30,
+                                child: CircularProgressIndicator(
+                                  value: progress,
+                                  strokeWidth: 2,
+                                  color: AppTheme.nebulaPurple,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+
                     // Like Button
                     Consumer2<PlayerController, FavoritesController>(
                       builder: (context, player, favorites, _) {

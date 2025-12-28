@@ -19,7 +19,11 @@ import 'package:nebula/features/home/presentation/screens/main_screen.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
 import 'package:nebula/features/settings/data/repositories/settings_repository_impl.dart'; // Added
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart'; // Added
-import 'package:nebula/features/settings/presentation/logic/settings_controller.dart'; // Added
+import 'package:nebula/features/settings/presentation/logic/settings_controller.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:nebula/features/downloads/data/repositories/download_repository_impl.dart';
+import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
+import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +47,20 @@ Future<void> main() async {
   final settingsRepo = SettingsRepositoryImpl();
   await settingsRepo.init();
 
-  runApp(MainApp(audioHandler: audioHandler, settingsRepository: settingsRepo));
+  // Initialize Hive for Downloads
+  await Hive.initFlutter();
+  final downloadsBox = await Hive.openBox('downloads');
+
+  // Initialize Download Repository
+  final downloadRepo = DownloadRepositoryImpl(downloadsBox);
+
+  runApp(
+    MainApp(
+      audioHandler: audioHandler,
+      settingsRepository: settingsRepo,
+      downloadRepository: downloadRepo,
+    ),
+  );
 }
 
 final supabase = Supabase.instance.client;
@@ -51,11 +68,13 @@ final supabase = Supabase.instance.client;
 class MainApp extends StatelessWidget {
   final NebulaAudioHandler audioHandler;
   final SettingsRepository settingsRepository;
+  final DownloadRepository downloadRepository;
 
   const MainApp({
     super.key,
     required this.audioHandler,
     required this.settingsRepository,
+    required this.downloadRepository,
   });
 
   @override
@@ -64,7 +83,7 @@ class MainApp extends StatelessWidget {
       providers: [
         // Repositories
         Provider<PlayerRepository>(
-          create: (_) => PlayerRepositoryImpl(audioHandler),
+          create: (_) => PlayerRepositoryImpl(audioHandler, downloadRepository),
         ),
         Provider<SettingsRepository>.value(
           value: settingsRepository,
@@ -81,6 +100,8 @@ class MainApp extends StatelessWidget {
           create: (_) => AuthService(Supabase.instance.client),
         ),
 
+        Provider<DownloadRepository>.value(value: downloadRepository),
+
         // Controllers
         ChangeNotifierProvider<SettingsController>(
           create: (context) {
@@ -92,9 +113,18 @@ class MainApp extends StatelessWidget {
           },
         ),
 
-        ChangeNotifierProvider<PlayerController>(
+        ChangeNotifierProvider<DownloadController>(
           create: (context) =>
-              PlayerController(context.read<PlayerRepository>()),
+              DownloadController(context.read<DownloadRepository>()),
+        ),
+
+        ChangeNotifierProvider<PlayerController>(
+          create: (context) => PlayerController(
+            PlayerRepositoryImpl(
+              audioHandler,
+              context.read<DownloadRepository>(),
+            ),
+          ),
         ),
 
         ChangeNotifierProvider<FavoritesController>(
