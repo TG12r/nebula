@@ -12,7 +12,6 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          // Background
           Positioned.fill(
             child: CustomPaint(
               painter: GridPainter(
@@ -25,7 +24,6 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Custom App Bar
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24.0,
@@ -52,7 +50,7 @@ class HomeScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      // TODO: Add Profile/Settings Icon
+
                       Container(
                         width: 40,
                         height: 40,
@@ -71,7 +69,6 @@ class HomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 20),
 
-                // Content Placeholder
                 Expanded(
                   child: Center(
                     child: Column(
@@ -95,16 +92,25 @@ class HomeScreen extends StatelessWidget {
                         NebulaButton(
                           label: 'DISCOVER',
                           technicalLabel: 'ACT: BROWSE / MODE: PUBLIC',
-                          onPressed: () {
+                          onPressed: () async {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('Loading audio stream...'),
                               ),
                             );
-                            // NCS - Fearless (Static Video)
-                            context.read<PlayerController>().playYoutubeVideo(
-                              'bFMeA03Q9k8',
-                            );
+
+                            final error = await context
+                                .read<PlayerController>()
+                                .playYoutubeVideo('Nyt7wjRrqo0');
+
+                            if (context.mounted && error != null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(error),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
                           },
                         ),
                       ],
@@ -115,12 +121,11 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
 
-          // Mini Player (Pinned to bottom)
           const Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            // Wrap in SafeArea to respect system navigation bar (III O <)
+
             child: SafeArea(top: false, child: MiniPlayer()),
           ),
         ],

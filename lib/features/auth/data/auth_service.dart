@@ -5,7 +5,6 @@ class AuthService {
 
   AuthService(this._supabase);
 
-  // Sign Up
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -18,7 +17,6 @@ class AuthService {
     );
   }
 
-  // Sign In
   Future<AuthResponse> signIn({
     required String email,
     required String password,
@@ -29,14 +27,11 @@ class AuthService {
     );
   }
 
-  // Sign Out
   Future<void> signOut() async {
     await _supabase.auth.signOut();
   }
 
-  // Get Current User
   User? get currentUser => _supabase.auth.currentUser;
 
-  // Stream Auth Changes
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 }

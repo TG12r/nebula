@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 
 class AppTheme {
-  // Nebula Color Palette
   static const Color nebulaPurple = Color(0xFF8A2BE2);
   static const Color cmfBlack = Color(0xFF000000);
   static const Color cmfDarkGrey = Color(0xFF1A1A1A);
@@ -20,7 +19,7 @@ class AppTheme {
         onSurface: cmfBlack,
       ),
       scaffoldBackgroundColor: cmfWhite,
-      fontFamily: 'Roboto', // Body font
+      fontFamily: 'Roboto',
       textTheme: _buildTextTheme(Colors.black),
       inputDecorationTheme: _buildInputTheme(Colors.black),
     );
@@ -45,9 +44,8 @@ class AppTheme {
 
   static TextTheme _buildTextTheme(Color color) {
     return TextTheme(
-      // Headlines - Use Monospaced for that "Technical/Industrial" look
       headlineLarge: TextStyle(
-        fontFamily: 'Courier New', 
+        fontFamily: 'Courier New',
         fontWeight: FontWeight.bold,
         letterSpacing: -1.0,
         color: color,
@@ -63,10 +61,10 @@ class AppTheme {
         fontWeight: FontWeight.w600,
         color: color,
       ),
-      // Body - Clean Sans Serif
+
       bodyLarge: TextStyle(color: color, fontWeight: FontWeight.normal),
       bodyMedium: TextStyle(color: color, fontWeight: FontWeight.normal),
-      // Labels - Technical / Robo-style
+
       labelLarge: TextStyle(
         fontFamily: 'Courier New',
         fontWeight: FontWeight.bold,
@@ -92,7 +90,7 @@ class AppTheme {
       filled: true,
       fillColor: color.withOpacity(0.05),
       border: const OutlineInputBorder(
-        borderRadius: BorderRadius.zero, // Sharp corners
+        borderRadius: BorderRadius.zero,
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(

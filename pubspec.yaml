@@ -16,11 +16,13 @@ dependencies:
   audio_service: ^0.18.12
   rxdart: ^0.27.7
   # Source
-  youtube_explode_dart: ^2.0.2
+  youtube_explode_dart: ^3.0.5
   # State Management (Simple for now)
   provider: ^6.1.1
   # UI
   font_awesome_flutter: ^10.6.0 # For player icons
+  http: ^1.6.0
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
