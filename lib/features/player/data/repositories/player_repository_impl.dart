@@ -10,13 +10,19 @@ import 'package:nebula/features/player/domain/repositories/player_repository.dar
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart'; // Added
+import 'package:nebula/features/settings/domain/repositories/settings_repository.dart'; // Added
 
 class PlayerRepositoryImpl implements PlayerRepository {
   final NebulaAudioHandler _audioHandler;
   final DownloadRepository _downloadRepository; // Added
+  final SettingsRepository _settingsRepository; // Added
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
-  PlayerRepositoryImpl(this._audioHandler, this._downloadRepository);
+  PlayerRepositoryImpl(
+    this._audioHandler,
+    this._downloadRepository,
+    this._settingsRepository,
+  );
 
   @override
   Stream<Duration> get positionStream => AudioService.position;
@@ -192,13 +198,27 @@ class PlayerRepositoryImpl implements PlayerRepository {
       );
 
       yt_lib.AudioOnlyStreamInfo? audioStream;
-      try {
-        audioStream = manifest.audioOnly.firstWhere(
-          (s) =>
-              s.container.name.toLowerCase() == 'mp4' ||
-              s.container.name.toLowerCase() == 'm4a',
-        );
-      } catch (_) {}
+
+      // Select Quality based on Settings
+      final highQuality = _settingsRepository.highAudioQuality;
+
+      if (highQuality) {
+        // Best Quality
+        audioStream = manifest.audioOnly.withHighestBitrate();
+      } else {
+        // Data Saver / Lower Quality
+        // Sort by bitrate ascending (lowest first)
+        final sorted = manifest.audioOnly.sortByBitrate();
+        if (sorted.isNotEmpty) {
+          // We pick the first one which is usually the lowest bitrate
+          // Or we could pick 'middle' to avoid terrible quality.
+          // Generally lowest is around 48kbps or 128kbps depending on codec.
+          // Let's safe pick index 0 (lowest) for "Data Saver".
+          audioStream = sorted.first;
+        }
+      }
+
+      // Fallback if selection failed (shouldn't happen if list not empty)
       audioStream ??= manifest.audioOnly.withHighestBitrate();
 
       return AudioSource.uri(

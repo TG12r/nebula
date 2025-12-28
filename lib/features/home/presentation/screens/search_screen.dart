@@ -93,20 +93,24 @@ class _SearchScreenState extends State<SearchScreen> {
                     // Results List
                     Expanded(
                       child: player.searchResults.isEmpty
-                          ? Center(
-                              child: player.isSearching
-                                  ? const SizedBox() // Handled by linear loader
-                                  : Text(
-                                      'NO DATA',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyLarge
-                                          ?.copyWith(
-                                            fontFamily: 'Courier New',
-                                            color: Colors.white30,
+                          ? (player.searchHistory.isNotEmpty &&
+                                    _searchController.text.isEmpty &&
+                                    !player.isSearching)
+                                ? _buildHistoryList(context, player)
+                                : Center(
+                                    child: player.isSearching
+                                        ? const SizedBox() // Handled by linear loader
+                                        : Text(
+                                            'NO DATA',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(
+                                                  fontFamily: 'Courier New',
+                                                  color: Colors.white30,
+                                                ),
                                           ),
-                                    ),
-                            )
+                                  )
                           : ListView.builder(
                               itemCount: player.searchResults.length,
                               // Use keyboardDismissBehavior to dismiss keyboard on scroll (better UX)
@@ -421,6 +425,73 @@ class _SearchScreenState extends State<SearchScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildHistoryList(BuildContext context, PlayerController player) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'HISTORY',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              TextButton(
+                onPressed: () => player.clearHistory(),
+                child: Text(
+                  'CLEAR',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: player.searchHistory.length,
+            itemBuilder: (context, index) {
+              final query = player.searchHistory[index];
+              return ListTile(
+                leading: const Icon(
+                  Icons.history,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                title: Text(
+                  query,
+                  style: const TextStyle(
+                    fontFamily: 'Courier New',
+                    color: Colors.white70,
+                  ),
+                ),
+                trailing: IconButton(
+                  icon: const Icon(
+                    Icons.close,
+                    size: 16,
+                    color: Colors.white30,
+                  ),
+                  onPressed: () => player.deleteHistoryItem(query),
+                ),
+                onTap: () {
+                  _searchController.text = query;
+                  player.search(query);
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

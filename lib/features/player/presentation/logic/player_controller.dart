@@ -3,9 +3,11 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
+import 'package:nebula/features/home/data/repositories/search_history_repository.dart'; // Added
 
 class PlayerController extends ChangeNotifier {
   final PlayerRepository _repository;
+  final SearchHistoryRepository _historyRepository; // Added
 
   // State
   bool _isPlaying = false;
@@ -18,6 +20,7 @@ class PlayerController extends ChangeNotifier {
   bool _isBuffering = false;
 
   List<Track> _queue = [];
+  List<String> _searchHistory = []; // Added
 
   // Getters
   bool get isPlaying => _isPlaying;
@@ -31,12 +34,29 @@ class PlayerController extends ChangeNotifier {
   bool get isBuffering => _isBuffering;
   Track? get currentTrack => _currentTrack;
   List<Track> get queue => _queue;
+  List<String> get searchHistory => _searchHistory; // Added
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];
 
-  PlayerController(this._repository) {
+  PlayerController(this._repository, this._historyRepository) {
     _initStreams();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    _searchHistory = _historyRepository.getHistory();
+    notifyListeners();
+  }
+
+  Future<void> deleteHistoryItem(String query) async {
+    await _historyRepository.deleteQuery(query);
+    await _loadHistory();
+  }
+
+  Future<void> clearHistory() async {
+    await _historyRepository.clear();
+    await _loadHistory();
   }
 
   void _initStreams() {
@@ -128,7 +148,31 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (query.isNotEmpty) {
+        await _historyRepository.addQuery(query);
+        _loadHistory();
+      }
       _searchResults = await _repository.search(query);
+    } finally {
+      _isSearching = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> playMix(String query) async {
+    _isSearching = true; // Show loading state if UI observes it
+    notifyListeners();
+
+    try {
+      final results = await _repository.search(query);
+      if (results.isNotEmpty) {
+        await playPlaylist(results);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Error playing mix: $e");
+      return false;
     } finally {
       _isSearching = false;
       notifyListeners();

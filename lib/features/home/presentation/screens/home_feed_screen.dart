@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 
 class HomeFeedScreen extends StatelessWidget {
   const HomeFeedScreen({super.key});
@@ -70,10 +72,30 @@ class HomeFeedScreen extends StatelessWidget {
               crossAxisSpacing: 16,
               childAspectRatio: 1.5,
               children: [
-                _buildMixCard(context, 'LOFI_CODE', Colors.purple),
-                _buildMixCard(context, 'SYNTH_WAVE', Colors.cyan),
-                _buildMixCard(context, 'DEEP_FOCUS', Colors.blue),
-                _buildMixCard(context, 'AMBIENT_LAB', Colors.green),
+                _buildMixCard(
+                  context,
+                  'LOFI_CODE',
+                  Colors.purple,
+                  'lofi hip hop radio',
+                ),
+                _buildMixCard(
+                  context,
+                  'SYNTH_WAVE',
+                  Colors.cyan,
+                  'synthwave mix',
+                ),
+                _buildMixCard(
+                  context,
+                  'DEEP_FOCUS',
+                  Colors.blue,
+                  'deep focus music',
+                ),
+                _buildMixCard(
+                  context,
+                  'AMBIENT_LAB',
+                  Colors.green,
+                  'ambient space music',
+                ),
               ],
             ),
           ],
@@ -82,7 +104,12 @@ class HomeFeedScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMixCard(BuildContext context, String title, Color accent) {
+  Widget _buildMixCard(
+    BuildContext context,
+    String title,
+    Color accent,
+    String query,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
@@ -93,8 +120,27 @@ class HomeFeedScreen extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            // Trigger mix
+          onTap: () async {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Initializing $title Sequence...'),
+                duration: const Duration(seconds: 1),
+                backgroundColor: accent,
+              ),
+            );
+            final success = await context.read<PlayerController>().playMix(
+              query,
+            );
+            if (!success && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text(
+                    'Connection Failed. Try on Desktop/Mobile.',
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           },
           child: Stack(
             children: [

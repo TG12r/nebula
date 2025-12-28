@@ -24,6 +24,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nebula/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
+import 'package:nebula/features/home/data/repositories/search_history_repository.dart'; // Added
 
 import 'package:nebula/core/services/notification_service.dart';
 
@@ -57,9 +58,12 @@ Future<void> main() async {
   final downloadsBox = await Hive.openBox('downloads');
   // Initialize Hive for Playlists
   final playlistBox = await Hive.openBox('playlists');
+  // Initialize Hive for History
+  final historyBox = await Hive.openBox('search_history'); // Added
 
   // Initialize Download Repository
   final downloadRepo = DownloadRepositoryImpl(downloadsBox);
+  final historyRepo = SearchHistoryRepository(historyBox); // Added
 
   runApp(
     MainApp(
@@ -67,6 +71,7 @@ Future<void> main() async {
       settingsRepository: settingsRepo,
       downloadRepository: downloadRepo,
       playlistBox: playlistBox,
+      historyRepository: historyRepo, // Added
     ),
   );
 }
@@ -78,6 +83,7 @@ class MainApp extends StatelessWidget {
   final SettingsRepository settingsRepository;
   final DownloadRepository downloadRepository;
   final Box playlistBox;
+  final SearchHistoryRepository historyRepository; // Added
 
   const MainApp({
     super.key,
@@ -85,6 +91,7 @@ class MainApp extends StatelessWidget {
     required this.settingsRepository,
     required this.downloadRepository,
     required this.playlistBox,
+    required this.historyRepository, // Added
   });
 
   @override
@@ -93,7 +100,11 @@ class MainApp extends StatelessWidget {
       providers: [
         // Repositories
         Provider<PlayerRepository>(
-          create: (_) => PlayerRepositoryImpl(audioHandler, downloadRepository),
+          create: (_) => PlayerRepositoryImpl(
+            audioHandler,
+            downloadRepository,
+            settingsRepository,
+          ),
         ),
         Provider<SettingsRepository>.value(
           value: settingsRepository,
@@ -131,10 +142,8 @@ class MainApp extends StatelessWidget {
 
         ChangeNotifierProvider<PlayerController>(
           create: (context) => PlayerController(
-            PlayerRepositoryImpl(
-              audioHandler,
-              context.read<DownloadRepository>(),
-            ),
+            context.read<PlayerRepository>(),
+            historyRepository, // Injected
           ),
         ),
 
