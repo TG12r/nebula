@@ -1,0 +1,60 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded Background: Deep Void Black -->
+  <rect x="0" y="0" width="512" height="512" rx="115" ry="115" fill="#000000"/>
+  
+  <defs>
+    <clipPath id="roundCorner">
+      <rect x="0" y="0" width="512" height="512" rx="115" ry="115"/>
+    </clipPath>
+    
+    <!-- Pattern: Tech Grid -->
+    <pattern id="techGrid" x="0" y="0" width="64" height="64" patternUnits="userSpaceOnUse">
+      <circle cx="32" cy="32" r="2" fill="#444444"/>
+    </pattern>
+
+    <!-- Filter: Nebula Cloud Blur -->
+    <filter id="nebulaBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="30" result="coloredBlur"/>
+    </filter>
+  </defs>
+
+  <!-- Tech Grid applied -->
+  <rect width="512" height="512" fill="url(#techGrid)" clip-path="url(#roundCorner)"/>
+
+  <!-- Centered Content Group -->
+  <!-- N width approx 290px -> Offset X = (512-290)/2 = 111 -->
+  <!-- N height 360px -> Offset Y = (512-360)/2 = 76 -->
+  
+  <!-- Layer 1: Nebula Cloud (Organic) -->
+  <g transform="translate(111, 76)" opacity="0.8">
+     <path d="M0 0 L0 360" stroke="#8A2BE2" stroke-width="80" stroke-linecap="round" filter="url(#nebulaBlur)"/>
+     <path d="M0 0 L290 360" stroke="#9400D3" stroke-width="60" stroke-linecap="round" filter="url(#nebulaBlur)"/>
+     <path d="M290 0 L290 360" stroke="#4B0082" stroke-width="80" stroke-linecap="round" filter="url(#nebulaBlur)"/>
+  </g>
+
+  <!-- Layer 2: Industrial HUD Overlay (Technical) -->
+  <rect x="40" y="40" width="432" height="432" rx="40" fill="none" stroke="#222222" stroke-width="4"/>
+  
+  <text x="440" y="450" font-family="monospace" font-size="10" fill="#444444" text-anchor="end">NBL-v1</text>
+  
+  <g transform="translate(45, 230) rotate(-90)">
+    <text x="0" y="0" font-family="Courier New" font-size="12" fill="#666666" text-anchor="middle">SYS.NAV</text>
+  </g>
+
+  <!-- Layer 3: The Constellation Structure (Foreground) -->
+  <g transform="translate(111, 76)">
+    <!-- Main Constellation Lines -->
+    <path d="M0 0 L0 360 L290 0 L290 360" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- Main Stars (Nodes) -->
+    <circle cx="0" cy="0" r="10" fill="#FFFFFF"/>
+    <circle cx="0" cy="360" r="10" fill="#FFFFFF"/>
+    
+    <!-- Middle star calculated: 50% of 290, 50% of 360 -->
+    <circle cx="145" cy="180" r="7" fill="#FFFFFF"/>
+    
+    <circle cx="290" cy="0" r="10" fill="#FFFFFF"/>
+    <circle cx="290" cy="360" r="10" fill="#FFFFFF"/>
+  </g>
+
+</svg>
