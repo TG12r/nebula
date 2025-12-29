@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 
 class AppTheme {
   static const Color nebulaPurple = Color(0xFF8A2BE2);

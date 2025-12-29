@@ -24,14 +24,11 @@ class NebulaAudioHandler extends BaseAudioHandler {
 
     // Broadcast MediaItem (Title, Artist, Art)
     _player.sequenceStateStream.listen((sequenceState) {
-      final sequence = sequenceState?.sequence;
-      if (sequence == null || sequence.isEmpty) return;
+      // 1. Update Queue (Force refresh from source of truth)
+      _broadcastQueue();
 
-      // Update Queue in AudioService
-      final queue = sequence.map((source) => source.tag as MediaItem).toList();
-      this.queue.add(queue);
-
-      final tag = sequenceState!.currentSource?.tag as MediaItem?;
+      // 2. Update Current MediaItem
+      final tag = sequenceState?.currentSource?.tag as MediaItem?;
       if (tag != null) {
         mediaItem.add(tag);
       }
@@ -93,6 +90,7 @@ class NebulaAudioHandler extends BaseAudioHandler {
       initialIndex: initialIndex,
       initialPosition: Duration.zero,
     );
+    _broadcastQueue();
   }
 
   /// Adds a single source to the end of the queue
@@ -103,12 +101,21 @@ class NebulaAudioHandler extends BaseAudioHandler {
     if (_player.audioSource == null) {
       await _player.setAudioSource(_playlist);
     }
+    _broadcastQueue();
   }
 
   /// Removes item at index
   @override
   Future<void> removeQueueItemAt(int index) async {
     await _playlist.removeAt(index);
+    _broadcastQueue();
+  }
+
+  void _broadcastQueue() {
+    final sequence = _playlist.sequence;
+    // Don't filter empty here, otherwise we can't clear queue in UI
+    final newQueue = sequence.map((source) => source.tag as MediaItem).toList();
+    queue.add(newQueue);
   }
 
   // --- BaseAudioHandler Overrides (System Controls) ---

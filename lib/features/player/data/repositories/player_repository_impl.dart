@@ -84,12 +84,17 @@ class PlayerRepositoryImpl implements PlayerRepository {
     if (startSource != null) {
       // Set the initial source (clearing previous queue)
       await _audioHandler.setSourceList([startSource], initialIndex: 0);
-      await _audioHandler.play();
-    }
 
-    // 2. Background: Load the rest of the queue
-    // We run this without awaiting so UI doesn't block
-    _loadRemainingQueue(tracks, initialIndex, currentId);
+      // 2. Background: Load the rest of the queue
+      // We start this immediately but don't await it, so it runs in parallel with playback start
+      _loadRemainingQueue(tracks, initialIndex, currentId);
+
+      await _audioHandler.play();
+    } else {
+      // Even if start source fails, try to load others? Or just abort.
+      // Usually if start fails, we might want to try next one.
+      _loadRemainingQueue(tracks, initialIndex, currentId);
+    }
   }
 
   Future<void> _loadRemainingQueue(
@@ -97,13 +102,44 @@ class PlayerRepositoryImpl implements PlayerRepository {
     int initialIndex,
     int generationId,
   ) async {
-    // Load remaining tracks sequentially
-    for (int i = initialIndex + 1; i < tracks.length; i++) {
-      if (_queueGenerationId != generationId) return; // Cancelled
-      final source = await _createAudioSource(tracks[i]);
-      if (source != null && _queueGenerationId == generationId) {
-        await _audioHandler.addAudioSourceToQueue(source);
+    try {
+      // We'll process the remaining tracks in batches to speed up loading
+      // without hitting rate limits too hard.
+      final remainingTracks = <Track>[];
+
+      // Add tracks AFTER the initial index
+      for (int i = initialIndex + 1; i < tracks.length; i++) {
+        remainingTracks.add(tracks[i]);
       }
+
+      final int batchSize = 3;
+
+      for (var i = 0; i < remainingTracks.length; i += batchSize) {
+        if (_queueGenerationId != generationId) return;
+
+        final end = (i + batchSize < remainingTracks.length)
+            ? i + batchSize
+            : remainingTracks.length;
+        final batch = remainingTracks.sublist(i, end);
+
+        // Process batch in parallel
+        final futures = batch.map((track) async {
+          if (_queueGenerationId != generationId) return null;
+          return await _createAudioSource(track);
+        });
+
+        final sources = await Future.wait(futures);
+
+        // Add valid sources to queue
+        for (final source in sources) {
+          if (_queueGenerationId != generationId) return;
+          if (source != null) {
+            await _audioHandler.addAudioSourceToQueue(source);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error in _loadRemainingQueue: $e");
     }
   }
 
