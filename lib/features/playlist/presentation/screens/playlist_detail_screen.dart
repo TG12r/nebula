@@ -238,91 +238,131 @@ class PlaylistDetailScreen extends StatelessWidget {
                                 final track =
                                     playlistCtrl.currentPlaylistTracks[index];
                                 // Key is required for ReorderableListView
-                                return Container(
+                                return Dismissible(
                                   key: ValueKey(track.id),
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.white10),
-                                    color: Colors.white.withOpacity(0.05),
+                                  direction: DismissDirection.startToEnd,
+                                  background: Container(
+                                    alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.only(left: 20),
+                                    color: Colors.green,
+                                    child: const Icon(
+                                      Icons.queue_music,
+                                      color: Colors.white,
+                                    ),
                                   ),
-                                  child: ListTile(
-                                    leading: Container(
-                                      width: 40,
-                                      height: 40,
-                                      color: Colors.white10,
-                                      child: Image.network(
-                                        track.thumbnailUrl,
-                                        fit: BoxFit.cover,
-                                        cacheWidth:
-                                            100, // Performance optimization
-                                      ),
+                                  confirmDismiss: (direction) async {
+                                    if (direction ==
+                                        DismissDirection.startToEnd) {
+                                      context
+                                          .read<PlayerController>()
+                                          .addToQueue(track);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("Added to queue"),
+                                          duration: Duration(seconds: 1),
+                                        ),
+                                      );
+                                      return false; // Don't remove from list
+                                    }
+                                    return false;
+                                  },
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.white10),
+                                      color: Colors.white.withOpacity(0.05),
                                     ),
-                                    title: Text(
-                                      track.title.toUpperCase(),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontFamily: 'Courier New',
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        // Download Icon
-                                        Consumer<DownloadController>(
-                                          builder: (context, downloader, _) {
-                                            final isDownloaded = downloader
-                                                .isDownloaded(track.id);
-                                            final isDownloading = downloader
-                                                .isDownloading(track.id);
-                                            final progress = downloader
-                                                .getProgress(track.id);
-
-                                            if (isDownloading) {
-                                              return Padding(
-                                                padding: const EdgeInsets.only(
-                                                  right: 16.0,
-                                                ),
-                                                child: SizedBox(
-                                                  width: 16,
-                                                  height: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        value: progress,
-                                                        strokeWidth: 2,
-                                                        color: AppTheme
-                                                            .nebulaPurple,
-                                                      ),
-                                                ),
-                                              );
-                                            }
-
-                                            return IconButton(
-                                              icon: Icon(
-                                                isDownloaded
-                                                    ? Icons.offline_pin
-                                                    : Icons.download_outlined,
-                                                size: 20,
-                                                color: isDownloaded
-                                                    ? AppTheme.nebulaPurple
-                                                    : Colors.white24,
-                                              ),
-                                              onPressed: isDownloaded
-                                                  ? null // Already downloaded
-                                                  : () => downloader
-                                                        .downloadTrack(track),
+                                    child: ListTile(
+                                      onTap: () {
+                                        context
+                                            .read<PlayerController>()
+                                            .playPlaylist(
+                                              playlistCtrl
+                                                  .currentPlaylistTracks,
+                                              initialIndex: index,
                                             );
-                                          },
+                                      },
+                                      leading: Container(
+                                        width: 40,
+                                        height: 40,
+                                        color: Colors.white10,
+                                        child: Image.network(
+                                          track.thumbnailUrl,
+                                          fit: BoxFit.cover,
+                                          cacheWidth:
+                                              100, // Performance optimization
                                         ),
-                                        // Drag Handle
-                                        const Icon(
-                                          Icons.drag_handle,
-                                          color: Colors.white24,
+                                      ),
+                                      title: Text(
+                                        track.title.toUpperCase(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontFamily: 'Courier New',
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
                                         ),
-                                      ],
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // Download Icon
+                                          Consumer<DownloadController>(
+                                            builder: (context, downloader, _) {
+                                              final isDownloaded = downloader
+                                                  .isDownloaded(track.id);
+                                              final isDownloading = downloader
+                                                  .isDownloading(track.id);
+                                              final progress = downloader
+                                                  .getProgress(track.id);
+
+                                              if (isDownloading) {
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        right: 16.0,
+                                                      ),
+                                                  child: SizedBox(
+                                                    width: 16,
+                                                    height: 16,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          value: progress,
+                                                          strokeWidth: 2,
+                                                          color: AppTheme
+                                                              .nebulaPurple,
+                                                        ),
+                                                  ),
+                                                );
+                                              }
+
+                                              return IconButton(
+                                                icon: Icon(
+                                                  isDownloaded
+                                                      ? Icons.offline_pin
+                                                      : Icons.download_outlined,
+                                                  size: 20,
+                                                  color: isDownloaded
+                                                      ? AppTheme.nebulaPurple
+                                                      : Colors.white24,
+                                                ),
+                                                onPressed: isDownloaded
+                                                    ? null // Already downloaded
+                                                    : () => downloader
+                                                          .downloadTrack(track),
+                                              );
+                                            },
+                                          ),
+                                          // Drag Handle
+                                          const Icon(
+                                            Icons.drag_handle,
+                                            color: Colors.white24,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 );

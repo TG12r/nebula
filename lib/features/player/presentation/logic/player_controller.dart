@@ -110,8 +110,8 @@ class PlayerController extends ChangeNotifier {
     return await _repository.play(track);
   }
 
-  Future<void> playPlaylist(List<Track> tracks) async {
-    await _repository.setQueue(tracks);
+  Future<void> playPlaylist(List<Track> tracks, {int initialIndex = 0}) async {
+    await _repository.setQueue(tracks, initialIndex: initialIndex);
   }
 
   Future<void> addToQueue(Track track) async {
