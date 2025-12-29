@@ -14,9 +14,14 @@ class NotificationService {
     );
     const iosSettings = DarwinInitializationSettings();
 
-    const settings = InitializationSettings(
+    final linuxSettings = const LinuxInitializationSettings(
+      defaultActionName: 'Open notification',
+    );
+
+    final settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
+      linux: linuxSettings,
     );
 
     await _notifications.initialize(

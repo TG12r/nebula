@@ -143,7 +143,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             await authService.signUp(
                               email: _emailController.text.trim(),
                               password: _passwordController.text,
-                              data: {'username': _nameController.text.trim()},
+                              data: {'full_name': _nameController.text.trim()},
                             );
 
                             if (context.mounted) {

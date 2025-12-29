@@ -14,6 +14,9 @@ dependencies:
   # Audio Core
   just_audio: ^0.9.36
   just_audio_windows: ^0.2.1
+  just_audio_media_kit: ^2.0.0
+  media_kit: ^1.1.10
+  media_kit_libs_linux: ^1.1.10
   audio_service: ^0.18.12
   rxdart: ^0.27.7
   # Source

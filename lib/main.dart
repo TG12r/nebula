@@ -27,9 +27,12 @@ import 'package:nebula/features/downloads/presentation/logic/download_controller
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart'; // Added
 
 import 'package:nebula/core/services/notification_service.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart'; // Added
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  JustAudioMediaKit.ensureInitialized(); // Added
 
   // Initialize Notifications
   await NotificationService().init();
