@@ -5,9 +5,12 @@ import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart'; // Added
 
+import 'package:nebula/features/home/data/repositories/playback_history_repository.dart'; // Added
+
 class PlayerController extends ChangeNotifier {
   final PlayerRepository _repository;
-  final SearchHistoryRepository _historyRepository; // Added
+  final SearchHistoryRepository _historyRepository;
+  final PlaybackHistoryRepository _playbackHistoryRepository; // Added
 
   // State
   bool _isPlaying = false;
@@ -20,7 +23,8 @@ class PlayerController extends ChangeNotifier {
   bool _isBuffering = false;
 
   List<Track> _queue = [];
-  List<String> _searchHistory = []; // Added
+  List<String> _searchHistory = [];
+  List<Track> _playbackHistory = []; // Added
 
   // Getters
   bool get isPlaying => _isPlaying;
@@ -34,14 +38,25 @@ class PlayerController extends ChangeNotifier {
   bool get isBuffering => _isBuffering;
   Track? get currentTrack => _currentTrack;
   List<Track> get queue => _queue;
-  List<String> get searchHistory => _searchHistory; // Added
+  List<String> get searchHistory => _searchHistory;
+  List<Track> get playbackHistory => _playbackHistory; // Added
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];
 
-  PlayerController(this._repository, this._historyRepository) {
+  PlayerController(
+    this._repository,
+    this._historyRepository,
+    this._playbackHistoryRepository,
+  ) {
     _initStreams();
     _loadHistory();
+    _loadPlaybackHistory(); // Added
+  }
+
+  Future<void> _loadPlaybackHistory() async {
+    _playbackHistory = _playbackHistoryRepository.getHistory();
+    notifyListeners();
   }
 
   Future<void> _loadHistory() async {
@@ -83,6 +98,12 @@ class PlayerController extends ChangeNotifier {
 
     _subscriptions.add(
       _repository.currentTrackStream.listen((t) {
+        // Auto-save to history when track changes
+        if (t != null && t.id != _currentTrack?.id) {
+          _playbackHistoryRepository.addToHistory(t);
+          _loadPlaybackHistory();
+        }
+
         _currentTrack = t;
         notifyListeners();
       }),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
+import 'package:nebula/features/player/presentation/screens/full_player_screen.dart';
 
 class HomeFeedScreen extends StatelessWidget {
   const HomeFeedScreen({super.key});
@@ -55,6 +56,101 @@ class HomeFeedScreen extends StatelessWidget {
             ),
 
             const SizedBox(height: 40),
+
+            // Recently Played Section
+            Consumer<PlayerController>(
+              builder: (context, player, child) {
+                if (player.playbackHistory.isEmpty) return const SizedBox();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'RECENT_LOGS',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 140,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: player.playbackHistory.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final track = player.playbackHistory[index];
+                          return Container(
+                            width: 100,
+                            margin: const EdgeInsets.only(
+                              bottom: 8,
+                            ), // Shadow space
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const FullPlayerScreen(),
+                                  ),
+                                );
+                                // Play as playlist (Queue = History)
+                                player.playPlaylist(
+                                  player.playbackHistory,
+                                  initialIndex: index,
+                                );
+                              },
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Thumbnail
+                                  AspectRatio(
+                                    aspectRatio: 1,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.black12,
+                                        border: Border.all(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.1),
+                                        ),
+                                      ),
+                                      child: Image.network(
+                                        track.thumbnailUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) =>
+                                            const Icon(Icons.music_note),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  // Title
+                                  Text(
+                                    track.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: 'Courier New',
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.9),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                );
+              },
+            ),
 
             // Featured Section
             Text(
