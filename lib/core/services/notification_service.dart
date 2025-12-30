@@ -30,6 +30,12 @@ class NotificationService {
         // Handle tap
       },
     );
+
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
   }
 
   Future<void> showProgress(
