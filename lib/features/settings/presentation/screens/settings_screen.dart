@@ -3,22 +3,24 @@ import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/settings/presentation/logic/settings_controller.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // backgroundColor: AppTheme.cmfBlack, // Removed to use Theme
       body: Stack(
         children: [
           // Background Grid
           Positioned.fill(
             child: CustomPaint(
               painter: GridPainter(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.1),
               ),
             ),
           ),
@@ -112,7 +114,7 @@ class SettingsScreen extends StatelessWidget {
                               Icons.delete_outline,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.7),
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
                             ),
                             onTap: () {
                               // Implement cache clearing logic here later
@@ -123,19 +125,8 @@ class SettingsScreen extends StatelessWidget {
                               );
                             },
                           ),
-                          NebulaListTile(
-                            title: 'Anonymous Metrics',
-                            subtitle: 'Help improve Nebula',
-                            trailing: Switch(
-                              value: settings.metrics,
-                              onChanged: (val) => settings.toggleMetrics(val),
-                              activeColor: AppTheme.nebulaPurple,
-                              inactiveTrackColor: Colors.white10,
-                            ),
-                          ),
-
                           const SizedBox(height: 32),
-                          // ... About section remains the same (static)
+                          // --- ABOUT ---
                           _buildSectionHeader(context, 'ABOUT'),
                           NebulaListTile(
                             title: 'GitHub Repository',
@@ -144,9 +135,24 @@ class SettingsScreen extends StatelessWidget {
                               Icons.code,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.7),
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
                             ),
-                            onTap: () {},
+                            onTap: () async {
+                              final Uri url = Uri.parse(
+                                'https://github.com/TG12r/nebula',
+                              );
+                              if (!await launchUrl(url)) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Could not launch GitHub URL',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
                           ),
                           NebulaListTile(
                             title: 'Licenses',
@@ -155,21 +161,43 @@ class SettingsScreen extends StatelessWidget {
                               Icons.description_outlined,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.7),
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
                             ),
-                            onTap: () {},
+                            onTap: () async {
+                              final Uri url = Uri.parse(
+                                'https://github.com/TG12r/nebula/blob/master/LICENSE',
+                              );
+                              if (!await launchUrl(url)) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Could not launch GitHub URL',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
                           ),
                           const SizedBox(height: 16),
                           Center(
-                            child: Text(
-                              'v0.1.0 (Alpha) • GPLv3 Licensed',
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.3),
-                                fontFamily: 'Courier New',
-                                fontSize: 12,
-                              ),
+                            child: FutureBuilder<PackageInfo>(
+                              future: PackageInfo.fromPlatform(),
+                              builder: (context, snapshot) {
+                                final version = snapshot.data?.version ?? '...';
+                                return Text(
+                                  'v$version • GPLv3 Licensed',
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.3),
+                                    fontFamily: 'Courier New',
+                                    fontSize: 12,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(height: 48),
