@@ -463,23 +463,29 @@ class _SearchScreenState extends State<SearchScreen> {
             itemBuilder: (context, index) {
               final query = player.searchHistory[index];
               return ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.history,
                   size: 18,
-                  color: Colors.white54,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
                 title: Text(
                   query,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Courier New',
-                    color: Colors.white70,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 trailing: IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close,
                     size: 16,
-                    color: Colors.white30,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.3),
                   ),
                   onPressed: () => player.deleteHistoryItem(query),
                 ),
