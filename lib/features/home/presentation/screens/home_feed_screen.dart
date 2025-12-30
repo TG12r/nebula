@@ -74,9 +74,9 @@ class HomeFeedScreen extends StatelessWidget {
               children: [
                 _buildMixCard(
                   context,
-                  'LOFI_CODE',
+                  'NIGHTCORE_CODE',
                   Colors.purple,
-                  'lofi hip hop radio',
+                  'nightcore mix',
                 ),
                 _buildMixCard(
                   context,

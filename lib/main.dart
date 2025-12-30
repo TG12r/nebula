@@ -34,8 +34,10 @@ import 'dart:io'; // Added for Platform check
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize MediaKit ONLY on Linux (Windows uses just_audio_windows)
+  // Initialize MediaKit ONLY on Linux
   if (Platform.isLinux) {
+    // Increase buffer size to 8MB to prevent stuttering
+    JustAudioMediaKit.bufferSize = 8 * 1024 * 1024;
     JustAudioMediaKit.ensureInitialized();
   }
 
