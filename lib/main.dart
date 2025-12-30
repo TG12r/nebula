@@ -17,22 +17,27 @@ import 'package:nebula/features/playlist/domain/repositories/playlist_repository
 import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
 import 'package:nebula/features/home/presentation/screens/main_screen.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
-import 'package:nebula/features/settings/data/repositories/settings_repository_impl.dart'; // Added
-import 'package:nebula/features/settings/domain/repositories/settings_repository.dart'; // Added
+import 'package:nebula/features/settings/data/repositories/settings_repository_impl.dart';
+import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
 import 'package:nebula/features/settings/presentation/logic/settings_controller.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nebula/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
-import 'package:nebula/features/home/data/repositories/search_history_repository.dart'; // Added
+import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
 
 import 'package:nebula/core/services/notification_service.dart';
-import 'package:just_audio_media_kit/just_audio_media_kit.dart'; // Added
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+
+import 'dart:io'; // Added for Platform check
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  JustAudioMediaKit.ensureInitialized(); // Added
+  // Initialize MediaKit ONLY on Linux (Windows uses just_audio_windows)
+  if (Platform.isLinux) {
+    JustAudioMediaKit.ensureInitialized();
+  }
 
   // Initialize Notifications
   await NotificationService().init();
@@ -62,11 +67,11 @@ Future<void> main() async {
   // Initialize Hive for Playlists
   final playlistBox = await Hive.openBox('playlists');
   // Initialize Hive for History
-  final historyBox = await Hive.openBox('search_history'); // Added
+  final historyBox = await Hive.openBox('search_history');
 
   // Initialize Download Repository
   final downloadRepo = DownloadRepositoryImpl(downloadsBox);
-  final historyRepo = SearchHistoryRepository(historyBox); // Added
+  final historyRepo = SearchHistoryRepository(historyBox);
 
   runApp(
     MainApp(
@@ -74,7 +79,7 @@ Future<void> main() async {
       settingsRepository: settingsRepo,
       downloadRepository: downloadRepo,
       playlistBox: playlistBox,
-      historyRepository: historyRepo, // Added
+      historyRepository: historyRepo,
     ),
   );
 }
@@ -86,7 +91,7 @@ class MainApp extends StatelessWidget {
   final SettingsRepository settingsRepository;
   final DownloadRepository downloadRepository;
   final Box playlistBox;
-  final SearchHistoryRepository historyRepository; // Added
+  final SearchHistoryRepository historyRepository;
 
   const MainApp({
     super.key,
@@ -94,7 +99,7 @@ class MainApp extends StatelessWidget {
     required this.settingsRepository,
     required this.downloadRepository,
     required this.playlistBox,
-    required this.historyRepository, // Added
+    required this.historyRepository,
   });
 
   @override
