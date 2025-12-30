@@ -7,6 +7,7 @@ import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:nebula/features/settings/presentation/screens/settings_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
+import 'package:nebula/core/services/update_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -23,6 +24,15 @@ class _MainScreenState extends State<MainScreen> {
     const SearchScreen(),
     const LibraryScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Check for updates on startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.instance.checkForUpdates(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
