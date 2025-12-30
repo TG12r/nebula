@@ -157,6 +157,12 @@ class PlayerRepositoryImpl implements PlayerRepository {
   }
 
   @override
+  Future<void> shuffleQueue() async {
+    // We delegate this complex logic to the Audio Handler which has direct access to indices
+    await _audioHandler.shuffleStringQueue();
+  }
+
+  @override
   Future<void> skipToNext() => _audioHandler.skipToNext();
 
   @override

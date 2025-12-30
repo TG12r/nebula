@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -137,4 +138,46 @@ class NebulaAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> skipToPrevious() => _player.seekToPrevious();
+
+  Future<void> shuffleStringQueue() async {
+    final currentIndex = _player.currentIndex;
+    if (currentIndex == null) return;
+
+    final sequence = _playlist.sequence;
+    if (currentIndex >= sequence.length - 1) return; // Nothing to shuffle after
+
+    // We can't easily extract "AudioSource" objects back out to move them freely without re-creating them or careful management.
+    // However, ConcatenatingAudioSource allows `move(from, to)`.
+    // Easier strategy: Get the list of indices to come (currentIndex + 1 to end).
+    // Shuffle that list of indices.
+    // Apply moves? Moving changes indices, so simple iteration is tricky.
+
+    // Robust Strategy:
+    // 1. Snapshot the *tags* (MediaItems) of the upcoming tracks.
+    // 2. Clear upcoming tracks.
+    // 3. Re-create AudioSources from tags? No, we lose the source reference.
+
+    // Correct Just_Audio strategy for "Hard Shuffle":
+    // Use `setShuffleOrder` if we only wanted logical shuffle.
+    // But for "Queue Shuffle" (Spotify style where the list changes):
+    // We must move items.
+    // Let's perform a simple "Fisher-Yates" style shuffle using `move()`.
+    // Range: [start, end] = [currentIndex + 1, sequence.length - 1]
+
+    final int start = currentIndex + 1;
+    // final int end = sequence.length; // Not used explicitly in loop condition
+
+    // We need to move items around.
+    // To safe complexity, we'll try `ShuffleOrder` approach?
+    // User asked: "Si empiezo... y lo activo se haga shuffle a la cola".
+    // This usually implies the *visible* order changes.
+
+    // Standard workaround:
+    // Manual Shuffle by moving each item to a random position in the remaining range.
+    // Iterate from start to end-2. Pick random k from i to end. Move k to i.
+    for (int i = start; i < sequence.length - 1; i++) {
+      int k = i + Random().nextInt(sequence.length - i);
+      if (k != i) await _playlist.move(k, i);
+    }
+  }
 }

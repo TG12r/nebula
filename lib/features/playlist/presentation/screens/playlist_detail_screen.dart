@@ -7,10 +7,17 @@ import 'package:nebula/features/playlist/domain/entities/playlist.dart';
 import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 
-class PlaylistDetailScreen extends StatelessWidget {
+class PlaylistDetailScreen extends StatefulWidget {
   final Playlist playlist;
 
   const PlaylistDetailScreen({super.key, required this.playlist});
+
+  @override
+  State<PlaylistDetailScreen> createState() => _PlaylistDetailScreenState();
+}
+
+class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
+  bool _isShuffleEnabled = false;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +51,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                                 ),
                           ),
                           Text(
-                            playlist.name.toUpperCase(),
+                            widget.playlist.name.toUpperCase(),
                             style: Theme.of(context).textTheme.headlineSmall
                                 ?.copyWith(
                                   letterSpacing: -1.0,
@@ -94,7 +101,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                             if (context.mounted) {
                               await context
                                   .read<PlaylistController>()
-                                  .deletePlaylist(playlist.id);
+                                  .deletePlaylist(widget.playlist.id);
                               Navigator.pop(context);
                             }
                           }
@@ -113,7 +120,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                       }
 
                       if (playlistCtrl.currentPlaylistTracks.isEmpty) {
-                        return Center(
+                        return const Center(
                           child: Text(
                             "EMPTY PLAYLIST",
                             style: TextStyle(
@@ -126,36 +133,110 @@ class PlaylistDetailScreen extends StatelessWidget {
 
                       return Column(
                         children: [
-                          // Action Buttons
+                          // Action Buttons Row (Like Spotify/Apple Music)
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 24.0,
+                              horizontal: 16.0,
                               vertical: 8.0,
                             ),
                             child: Row(
                               children: [
-                                // Play All
-                                Expanded(
-                                  child: ElevatedButton.icon(
+                                // Left Side: Download, Add/Other actions
+                                Consumer<DownloadController>(
+                                  builder: (context, downloader, _) {
+                                    return Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.download_rounded,
+                                            color: Colors.white,
+                                            size: 28,
+                                          ),
+                                          onPressed: () {
+                                            downloader.downloadPlaylist(
+                                              playlistCtrl
+                                                  .currentPlaylistTracks,
+                                            );
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  "Downloading playlist...",
+                                                ),
+                                                duration: Duration(seconds: 2),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        // Placeholder for 'Like' or 'Add'
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.add_circle_outline,
+                                            color: Colors.white54,
+                                            size: 28,
+                                          ),
+                                          onPressed: () {
+                                            // TODO: Implement Add tracks
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+
+                                const Spacer(),
+
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.shuffle,
+                                    color: _isShuffleEnabled
+                                        ? AppTheme.nebulaPurple
+                                        : Colors.white, // Toggle Color
+                                    size: 24,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _isShuffleEnabled = !_isShuffleEnabled;
+                                    });
+
+                                    // If active, shuffle the remaining queue immediately
+                                    if (_isShuffleEnabled) {
+                                      // Optional: Check if we are currently playing *this* playlist?
+                                      // User request: "Si empiezo... y lo activo se haga shuffle a la cola"
+                                      // Safest to just call shuffleQueue() which shuffles "Next Up".
+                                      // It won't hurt if playing something else, just shuffles the user's queue.
+                                      context
+                                          .read<PlayerController>()
+                                          .shuffleQueue();
+
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("Queue Shuffled"),
+                                          duration: Duration(seconds: 1),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                // Compact Industrial Play Button
+                                SizedBox(
+                                  height:
+                                      48, // Slightly shorter than standard 56
+                                  child: ElevatedButton(
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: Colors.black,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(4),
+                                      backgroundColor: AppTheme.nebulaPurple,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: const RoundedRectangleBorder(
+                                        borderRadius: BorderRadius
+                                            .zero, // Sharp corners like NebulaButton
                                       ),
                                       padding: const EdgeInsets.symmetric(
-                                        vertical: 16,
-                                      ),
-                                    ),
-                                    icon: const Icon(
-                                      Icons.play_arrow,
-                                      color: Colors.black,
-                                    ),
-                                    label: const Text(
-                                      "PLAY ALL",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontFamily: 'Courier New',
+                                        horizontal: 20,
                                       ),
                                     ),
                                     onPressed: () {
@@ -163,52 +244,19 @@ class PlaylistDetailScreen extends StatelessWidget {
                                           .read<PlayerController>()
                                           .playPlaylist(
                                             playlistCtrl.currentPlaylistTracks,
+                                            shuffle: _isShuffleEnabled,
                                           );
                                     },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                // Download All
-                                Consumer<DownloadController>(
-                                  builder: (context, downloader, _) {
-                                    return SizedBox(
-                                      width: 60,
-                                      height: 50, // Match typical button height
-                                      child: ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: AppTheme.cmfDarkGrey,
-                                          foregroundColor: Colors.white,
-                                          padding: EdgeInsets.zero,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            side: const BorderSide(
-                                              color: Colors.white24,
-                                            ),
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.download_rounded,
-                                        ),
-                                        onPressed: () {
-                                          downloader.downloadPlaylist(
-                                            playlistCtrl.currentPlaylistTracks,
-                                          );
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "Downloading playlist...",
-                                              ),
-                                              duration: Duration(seconds: 2),
-                                            ),
-                                          );
-                                        },
+                                    child: const Text(
+                                      "PLAY ALL",
+                                      style: TextStyle(
+                                        fontFamily: 'Courier New',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        letterSpacing: 1.0,
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),

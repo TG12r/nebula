@@ -24,4 +24,5 @@ abstract class PlayerRepository {
   // Queue Management
   Future<void> addToQueue(Track track);
   Future<void> removeFromQueue(int index);
+  Future<void> shuffleQueue(); // New
 }
