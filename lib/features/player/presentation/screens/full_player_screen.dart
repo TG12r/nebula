@@ -6,6 +6,7 @@ import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
+import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -312,7 +313,14 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                           ),
                           onPressed: () {
                             if (track != null) {
-                              favorites.toggleFavorite(track);
+                              if (!isLiked) {
+                                // Will be added to favorites, show modal
+                                favorites.toggleFavorite(track);
+                                _showAddToPlaylistModal(context, track);
+                              } else {
+                                // Will be removed
+                                favorites.toggleFavorite(track);
+                              }
                             }
                           },
                         );
@@ -541,5 +549,173 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
       return "${twoDigits(duration.inHours)}:${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
     }
     return "${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
+  }
+
+  void _showAddToPlaylistModal(BuildContext context, dynamic track) {
+    final favoritesCtrl = context.read<FavoritesController>();
+    final playlistCtrl = context.read<PlaylistController>();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.cmfBlack,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.zero),
+      ),
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              height: MediaQuery.of(context).size.height * 0.5,
+              decoration: BoxDecoration(
+                color: AppTheme.cmfDarkGrey,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border(
+                  top: BorderSide(
+                    color: AppTheme.nebulaPurple.withOpacity(0.3),
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "MANAGE TRACK",
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(color: Colors.white, letterSpacing: -1),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Favorites Toggle
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(
+                      Icons.favorite,
+                      color: AppTheme.nebulaPurple,
+                    ),
+                    title: const Text(
+                      "LIKED SONGS",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'Courier New',
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: Consumer<FavoritesController>(
+                      builder: (context, favs, _) {
+                        return Switch(
+                          value: favs.isFavorite(track.id),
+                          activeColor: AppTheme.nebulaPurple,
+                          onChanged: (_) {
+                            favs.toggleFavorite(track);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const Divider(color: Colors.white24),
+                  const Text(
+                    "PLAYLISTS",
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                      fontFamily: 'Courier New',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  Expanded(
+                    child: FutureBuilder<List<String>>(
+                      future: playlistCtrl.getPlaylistsContainingTrack(
+                        track.id,
+                      ),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        final containingIds = snapshot.data!;
+
+                        return ListView(
+                          children: playlistCtrl.playlists.map((playlist) {
+                            final isAdded = containingIds.contains(playlist.id);
+                            return CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                playlist.name.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: 'Courier New',
+                                ),
+                              ),
+                              value: isAdded,
+                              activeColor: AppTheme.nebulaPurple,
+                              onChanged: (val) async {
+                                if (val == true) {
+                                  await playlistCtrl.addTrackToPlaylist(
+                                    playlist.id,
+                                    track,
+                                  );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          "Added to ${playlist.name}",
+                                        ),
+                                        duration: const Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  await playlistCtrl.removeTrackFromPlaylist(
+                                    playlist.id,
+                                    track.id,
+                                  );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          "Removed from ${playlist.name}",
+                                        ),
+                                        duration: const Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                }
+                                // Update local state for immediate feedback
+                                setState(() {
+                                  if (val == true) {
+                                    containingIds.add(playlist.id);
+                                  } else {
+                                    containingIds.remove(playlist.id);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
