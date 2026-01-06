@@ -314,13 +314,22 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                 // Key is required for ReorderableListView
                                 return Dismissible(
                                   key: ValueKey(track.id),
-                                  direction: DismissDirection.startToEnd,
+                                  direction: DismissDirection.horizontal,
                                   background: Container(
                                     alignment: Alignment.centerLeft,
                                     padding: const EdgeInsets.only(left: 20),
                                     color: Colors.green,
                                     child: const Icon(
                                       Icons.queue_music,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  secondaryBackground: Container(
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.only(right: 20),
+                                    color: Colors.red,
+                                    child: const Icon(
+                                      Icons.delete_outline,
                                       color: Colors.white,
                                     ),
                                   ),
@@ -339,6 +348,67 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                         ),
                                       );
                                       return false; // Don't remove from list
+                                    } else if (direction ==
+                                        DismissDirection.endToStart) {
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          backgroundColor: AppTheme.cmfDarkGrey,
+                                          title: const Text(
+                                            'REMOVE TRACK?',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontFamily: 'Courier New',
+                                            ),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: const Text(
+                                                'CANCEL',
+                                                style: TextStyle(
+                                                  color: Colors.white54,
+                                                ),
+                                              ),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: const Text(
+                                                'REMOVE',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirm == true) {
+                                        if (context.mounted) {
+                                          try {
+                                            await context
+                                                .read<PlaylistController>()
+                                                .removeTrackFromPlaylist(
+                                                  widget.playlist.id,
+                                                  track.id,
+                                                );
+                                            // Since controller updates correctly now, we can return false
+                                            // and let the consumer rebuild.
+                                            // Or return true if we want the local list removal animation.
+                                            // But controller calls notifyListeners() which rebuilds this list.
+                                            // If we return true here, UI removes item THEN Consumer rebuilds.
+                                            // It's safer to return false and let Consumer update.
+                                            return false;
+                                          } catch (e) {
+                                            debugPrint("Error removing: $e");
+                                            return false;
+                                          }
+                                        }
+                                      }
+                                      return false;
                                     }
                                     return false;
                                   },
