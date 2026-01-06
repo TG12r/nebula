@@ -552,7 +552,6 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
   }
 
   void _showAddToPlaylistModal(BuildContext context, dynamic track) {
-    final favoritesCtrl = context.read<FavoritesController>();
     final playlistCtrl = context.read<PlaylistController>();
 
     showModalBottomSheet(
