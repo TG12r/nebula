@@ -83,12 +83,37 @@ class PlaylistController extends ChangeNotifier {
       notifyListeners();
     }
 
+    // Optimistic update for playlist list count
+    final index = _playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      final p = _playlists[index];
+      _playlists[index] = Playlist(
+        id: p.id,
+        name: p.name,
+        userId: p.userId,
+        trackCount: p.trackCount + 1,
+      );
+      notifyListeners();
+    }
+
     try {
       await _repository.addTrackToPlaylist(playlistId, track);
     } catch (e) {
-      // Revert
+      // Revert details
       if (_currentPlaylistId == playlistId) {
         _currentPlaylistTracks.remove(track);
+        notifyListeners();
+      }
+
+      // Revert list count
+      if (index != -1) {
+        final p = _playlists[index];
+        _playlists[index] = Playlist(
+          id: p.id,
+          name: p.name,
+          userId: p.userId,
+          trackCount: p.trackCount - 1,
+        );
         notifyListeners();
       }
       rethrow;
@@ -108,6 +133,19 @@ class PlaylistController extends ChangeNotifier {
       // Optimistic update if viewing
       if (_currentPlaylistId == playlistId) {
         _currentPlaylistTracks.removeWhere((t) => t.id == trackId);
+        notifyListeners();
+      }
+
+      // Update list count
+      final index = _playlists.indexWhere((p) => p.id == playlistId);
+      if (index != -1) {
+        final p = _playlists[index];
+        _playlists[index] = Playlist(
+          id: p.id,
+          name: p.name,
+          userId: p.userId,
+          trackCount: p.trackCount - 1,
+        );
         notifyListeners();
       }
     } catch (e) {

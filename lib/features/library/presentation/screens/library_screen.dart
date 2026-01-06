@@ -82,7 +82,7 @@ class LibraryScreen extends StatelessWidget {
                           title: playlist.name.toUpperCase(),
                           subtitle:
                               'CUSTOM_PLAYLIST // ${playlist.trackCount} TRACKS',
-                          color: Colors.blueAccent, // Or random/theme color
+                          color: Colors.blueAccent,
                           icon: Icons.album,
                           onTap: () {
                             // Navigate into detail
