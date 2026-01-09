@@ -291,6 +291,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                           // Tracks
                           Expanded(
                             child: ReorderableListView.builder(
+                              itemExtent: 80.0, // Fixed height for performance
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
                               itemCount:
                                   playlistCtrl.currentPlaylistTracks.length,
@@ -432,11 +433,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                         width: 40,
                                         height: 40,
                                         color: Colors.white10,
-                                        child: Image.network(
-                                          track.thumbnailUrl,
+                                        child: NebulaImage(
+                                          url: track.thumbnailUrl,
                                           fit: BoxFit.cover,
-                                          cacheWidth:
-                                              100, // Performance optimization
+                                          isThumbnail: true,
                                         ),
                                       ),
                                       title: Text(
@@ -677,11 +677,11 @@ class _AddTracksModalState extends State<_AddTracksModal> {
                         width: 48,
                         height: 48,
                         color: Colors.white10,
-                        child: Image.network(
-                          track.thumbnailUrl,
+                        child: NebulaImage(
+                          url: track.thumbnailUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (c, o, s) =>
-                              const Icon(Icons.music_note),
+                          isThumbnail: true,
+                          errorBuilder: const Icon(Icons.music_note),
                         ),
                       ),
                       title: Text(

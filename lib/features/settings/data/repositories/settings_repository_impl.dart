@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
+import 'package:nebula/features/settings/domain/entities/image_quality.dart';
 
 class SettingsRepositoryImpl implements SettingsRepository {
   SharedPreferences? _prefs;
@@ -7,6 +8,23 @@ class SettingsRepositoryImpl implements SettingsRepository {
   @override
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+  }
+
+  // Image Quality
+  static const String _kImageQuality = 'settings_image_quality';
+
+  @override
+  ImageQuality get imageQuality {
+    final index = _prefs?.getInt(_kImageQuality) ?? 1; // Default Medium (1)
+    if (index >= 0 && index < ImageQuality.values.length) {
+      return ImageQuality.values[index];
+    }
+    return ImageQuality.medium;
+  }
+
+  @override
+  Future<void> setImageQuality(ImageQuality value) async {
+    await _prefs?.setInt(_kImageQuality, value.index);
   }
 
   // Keys

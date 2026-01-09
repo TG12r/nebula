@@ -9,13 +9,13 @@ import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
-import 'package:nebula/features/downloads/domain/repositories/download_repository.dart'; // Added
-import 'package:nebula/features/settings/domain/repositories/settings_repository.dart'; // Added
+import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
+import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
 
 class PlayerRepositoryImpl implements PlayerRepository {
   final NebulaAudioHandler _audioHandler;
-  final DownloadRepository _downloadRepository; // Added
-  final SettingsRepository _settingsRepository; // Added
+  final DownloadRepository _downloadRepository;
+  final SettingsRepository _settingsRepository;
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   PlayerRepositoryImpl(
@@ -167,6 +167,10 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   @override
   Future<void> skipToPrevious() => _audioHandler.skipToPrevious();
+
+  @override
+  Future<void> skipToQueueItem(int index) =>
+      _audioHandler.skipToQueueItem(index);
 
   @override
   Future<void> pause() => _audioHandler.pause();

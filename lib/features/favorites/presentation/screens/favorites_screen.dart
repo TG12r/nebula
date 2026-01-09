@@ -6,6 +6,7 @@ import 'package:nebula/features/downloads/presentation/logic/download_controller
 import 'package:nebula/core/theme/app_theme.dart';
 
 import 'package:nebula/features/player/presentation/widgets/mini_player.dart';
+import 'package:nebula/shared/widgets/widgets.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -219,6 +220,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
                           Expanded(
                             child: ListView.builder(
+                              itemExtent: 80.0, // Fixed height for performance
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
                               itemCount: favoritesCtrl.favorites.length,
                               itemBuilder: (context, index) {
@@ -328,9 +330,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                         height: 50,
                                         color: AppTheme.cmfDarkGrey,
                                         child: track.thumbnailUrl.isNotEmpty
-                                            ? Image.network(
-                                                track.thumbnailUrl,
+                                            ? NebulaImage(
+                                                url: track.thumbnailUrl,
                                                 fit: BoxFit.cover,
+                                                isThumbnail: true,
                                               )
                                             : const Icon(
                                                 Icons.music_note,

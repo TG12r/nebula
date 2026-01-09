@@ -7,6 +7,7 @@ abstract class PlayerRepository {
   Future<void> setQueue(List<Track> tracks, {int initialIndex = 0}); // New
   Future<void> skipToNext(); // New
   Future<void> skipToPrevious(); // New
+  Future<void> skipToQueueItem(int index); // New
   Future<void> pause();
   Future<void> resume(); // distinct from play(id)
   Future<void> seek(Duration position);

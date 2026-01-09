@@ -25,12 +25,12 @@ import 'package:nebula/features/downloads/data/repositories/download_repository_
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
-import 'package:nebula/features/home/data/repositories/playback_history_repository.dart'; // Added
+import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';  
 
 import 'package:nebula/core/services/notification_service.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
-import 'dart:io'; // Added for Platform check
+import 'dart:io';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,14 +71,14 @@ Future<void> main() async {
   final playlistBox = await Hive.openBox('playlists');
   // Initialize Hive for History
   final historyBox = await Hive.openBox('search_history');
-  final playbackHistoryBox = await Hive.openBox('playback_history'); // Added
+  final playbackHistoryBox = await Hive.openBox('playback_history');   
 
   // Initialize Download Repository
   final downloadRepo = DownloadRepositoryImpl(downloadsBox);
   final historyRepo = SearchHistoryRepository(historyBox);
   final playbackHistoryRepo = PlaybackHistoryRepository(
     playbackHistoryBox,
-  ); // Added
+  ); 
 
   runApp(
     MainApp(
@@ -87,7 +87,7 @@ Future<void> main() async {
       downloadRepository: downloadRepo,
       playlistBox: playlistBox,
       historyRepository: historyRepo,
-      playbackHistoryRepository: playbackHistoryRepo, // Added
+      playbackHistoryRepository: playbackHistoryRepo, 
     ),
   );
 }
@@ -100,7 +100,7 @@ class MainApp extends StatelessWidget {
   final DownloadRepository downloadRepository;
   final Box playlistBox;
   final SearchHistoryRepository historyRepository;
-  final PlaybackHistoryRepository playbackHistoryRepository; // Added
+  final PlaybackHistoryRepository playbackHistoryRepository; 
 
   const MainApp({
     super.key,
@@ -109,7 +109,7 @@ class MainApp extends StatelessWidget {
     required this.downloadRepository,
     required this.playlistBox,
     required this.historyRepository,
-    required this.playbackHistoryRepository, // Added
+    required this.playbackHistoryRepository,  
   });
 
   @override

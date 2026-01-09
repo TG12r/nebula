@@ -102,9 +102,10 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 selector: (_, p) => p.currentThumbnail,
                                 builder: (_, thumbnail, __) {
                                   return thumbnail != null
-                                      ? Image.network(
-                                          thumbnail,
+                                      ? NebulaImage(
+                                          url: thumbnail,
                                           fit: BoxFit.cover,
+                                          isThumbnail: false, // High quality
                                         )
                                       : const Center(
                                           child: Icon(
@@ -485,13 +486,15 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 ),
                                 leading: ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
-                                  child: Image.network(
-                                    track.thumbnailUrl,
+                                  child: NebulaImage(
+                                    url: track.thumbnailUrl,
                                     width: 40,
                                     height: 40,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        Container(color: Colors.white12),
+                                    isThumbnail: true,
+                                    errorBuilder: Container(
+                                      color: Colors.white12,
+                                    ),
                                   ),
                                 ),
                                 title: Text(
@@ -516,6 +519,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                     fontSize: 12,
                                   ),
                                 ),
+                                onTap: () {
+                                  if (track.id != player.currentTrack?.id) {
+                                    player.skipToQueueItem(index);
+                                  }
+                                },
                                 trailing: IconButton(
                                   icon: const Icon(
                                     Icons.remove_circle_outline,

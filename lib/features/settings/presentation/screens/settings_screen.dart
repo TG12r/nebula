@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/settings/presentation/logic/settings_controller.dart';
+import 'package:nebula/features/settings/domain/entities/image_quality.dart';
+import 'package:nebula/core/services/update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -70,9 +75,39 @@ class SettingsScreen extends StatelessWidget {
                                 : 'Light Mode',
                             trailing: Switch(
                               value: settings.isDarkMode,
-                              onChanged: (val) => settings.toggleTheme(val),
+                              onChanged: (_) => settings.toggleTheme(),
                               activeColor: AppTheme.nebulaPurple,
                               inactiveTrackColor: Colors.white10,
+                            ),
+                          ),
+                          NebulaListTile(
+                            title: 'Image Quality',
+                            subtitle: 'Control memory usage',
+                            trailing: DropdownButton<ImageQuality>(
+                              value: settings.imageQuality,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: AppTheme.nebulaPurple,
+                              ),
+                              items: ImageQuality.values.map((quality) {
+                                return DropdownMenuItem(
+                                  value: quality,
+                                  child: Text(
+                                    quality.name.toUpperCase(),
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 12,
+                                      fontFamily: 'Courier New',
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val != null) settings.setImageQuality(val);
+                              },
                             ),
                           ),
                           const SizedBox(height: 32),
@@ -86,8 +121,7 @@ class SettingsScreen extends StatelessWidget {
                                 : 'Standard Quality',
                             trailing: Switch(
                               value: settings.highQuality,
-                              onChanged: (val) =>
-                                  settings.toggleHighQuality(val),
+                              onChanged: (_) => settings.toggleHighQuality(),
                               activeColor: AppTheme.nebulaPurple,
                               inactiveTrackColor: Colors.white10,
                             ),
@@ -97,7 +131,7 @@ class SettingsScreen extends StatelessWidget {
                             subtitle: 'Preload next track',
                             trailing: Switch(
                               value: settings.gapless,
-                              onChanged: (val) => settings.toggleGapless(val),
+                              onChanged: (_) => settings.toggleGapless(),
                               activeColor: AppTheme.nebulaPurple,
                               inactiveTrackColor: Colors.white10,
                             ),
@@ -116,18 +150,59 @@ class SettingsScreen extends StatelessWidget {
                                 context,
                               ).colorScheme.onSurface.withValues(alpha: 0.7),
                             ),
-                            onTap: () {
-                              // Implement cache clearing logic here later
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Cache cleared! (Simulated)'),
-                                ),
-                              );
+                            onTap: () async {
+                              // 1. Clear Memory Cache (RAM)
+                              PaintingBinding.instance.imageCache.clear();
+                              PaintingBinding.instance.imageCache
+                                  .clearLiveImages();
+
+                              // 2. Clear Disk Cache (Temp Files)
+                              try {
+                                final tempDir = await getTemporaryDirectory();
+                                if (await tempDir.exists()) {
+                                  final dir = Directory(tempDir.path);
+                                  dir.list(recursive: true).listen((
+                                    file,
+                                  ) async {
+                                    if (file is File) {
+                                      try {
+                                        await file.delete();
+                                      } catch (e) {
+                                        // Ignore errors (e.g., file in use)
+                                      }
+                                    }
+                                  });
+                                }
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Memory and temporary files cleared',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                debugPrint("Error clearing cache: $e");
+                              }
                             },
                           ),
                           const SizedBox(height: 32),
                           // --- ABOUT ---
                           _buildSectionHeader(context, 'ABOUT'),
+                          NebulaListTile(
+                            title: 'Check for Updates',
+                            subtitle: 'Get the latest version',
+                            leading: Icon(
+                              Icons.system_update_alt,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                            onTap: () {
+                              UpdateService.instance.checkForUpdates(context);
+                            },
+                          ),
                           NebulaListTile(
                             title: 'GitHub Repository',
                             subtitle: 'View Source Code',

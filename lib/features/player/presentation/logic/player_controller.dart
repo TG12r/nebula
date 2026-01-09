@@ -3,14 +3,14 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
-import 'package:nebula/features/home/data/repositories/search_history_repository.dart'; // Added
+import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
 
-import 'package:nebula/features/home/data/repositories/playback_history_repository.dart'; // Added
+import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';
 
 class PlayerController extends ChangeNotifier {
   final PlayerRepository _repository;
   final SearchHistoryRepository _historyRepository;
-  final PlaybackHistoryRepository _playbackHistoryRepository; // Added
+  final PlaybackHistoryRepository _playbackHistoryRepository;
 
   // State
   bool _isPlaying = false;
@@ -24,7 +24,7 @@ class PlayerController extends ChangeNotifier {
 
   List<Track> _queue = [];
   List<String> _searchHistory = [];
-  List<Track> _playbackHistory = []; // Added
+  List<Track> _playbackHistory = [];
 
   // Getters
   bool get isPlaying => _isPlaying;
@@ -39,7 +39,7 @@ class PlayerController extends ChangeNotifier {
   Track? get currentTrack => _currentTrack;
   List<Track> get queue => _queue;
   List<String> get searchHistory => _searchHistory;
-  List<Track> get playbackHistory => _playbackHistory; // Added
+  List<Track> get playbackHistory => _playbackHistory;
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];
@@ -51,7 +51,7 @@ class PlayerController extends ChangeNotifier {
   ) {
     _initStreams();
     _loadHistory();
-    _loadPlaybackHistory(); // Added
+    _loadPlaybackHistory();
   }
 
   Future<void> _loadPlaybackHistory() async {
@@ -162,6 +162,10 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> skipToPrevious() async {
     await _repository.skipToPrevious();
+  }
+
+  Future<void> skipToQueueItem(int index) async {
+    await _repository.skipToQueueItem(index);
   }
 
   Future<void> togglePlay() async {

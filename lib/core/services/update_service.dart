@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -24,13 +22,12 @@ class UpdateService {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = Version.parse(packageInfo.version);
 
-      final url = Uri.parse(
-        'https://api.github.com/repos/$_repoOwner/$_repoName/releases/latest',
-      );
-      final response = await http.get(url);
+      final url =
+          'https://api.github.com/repos/$_repoOwner/$_repoName/releases/latest';
+      final response = await Dio().get(url);
 
       if (response.statusCode == 200) {
-        final releaseData = jsonDecode(response.body);
+        final releaseData = response.data;
         final String tagName = releaseData['tag_name'];
         final cleanTag = tagName.startsWith('v')
             ? tagName.substring(1)

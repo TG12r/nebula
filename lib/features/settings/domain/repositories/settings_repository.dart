@@ -1,5 +1,11 @@
+import 'package:nebula/features/settings/domain/entities/image_quality.dart';
+
 abstract class SettingsRepository {
   Future<void> init();
+
+  // Image Quality
+  ImageQuality get imageQuality;
+  Future<void> setImageQuality(ImageQuality value);
 
   // Playback
   bool get highAudioQuality;

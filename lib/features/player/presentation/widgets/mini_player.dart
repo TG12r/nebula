@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/features/player/presentation/screens/full_player_screen.dart';
+import 'package:nebula/shared/widgets/widgets.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -61,9 +62,10 @@ class MiniPlayer extends StatelessWidget {
               child: AspectRatio(
                 aspectRatio: 1.0,
                 child: controller.currentThumbnail != null
-                    ? Image.network(
-                        controller.currentThumbnail!,
+                    ? NebulaImage(
+                        url: controller.currentThumbnail!,
                         fit: BoxFit.cover,
+                        isThumbnail: true,
                       )
                     : Container(
                         color: AppTheme.cmfDarkGrey,
