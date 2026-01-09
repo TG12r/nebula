@@ -79,3 +79,9 @@ create policy "Users can manage tracks in their playlists" on public.playlist_tr
       and user_id = (select auth.uid())
     )
   );
+
+-- 5. Performance Indexes (Fixes Supabase Warnings)
+-- Supabase warns if RLS is enabled but the filtering columns are not indexed.
+create index favorites_user_id_idx on public.favorites (user_id);
+create index playlists_user_id_idx on public.playlists (user_id);
+create index playlist_tracks_playlist_id_idx on public.playlist_tracks (playlist_id);
