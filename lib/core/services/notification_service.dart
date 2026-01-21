@@ -59,7 +59,12 @@ class NotificationService {
 
     final details = NotificationDetails(android: androidDetails);
 
-    await _notifications.show(id, title, body, details);
+    try {
+      await _notifications.show(id, title, body, details);
+    } catch (e) {
+      // Ignore notification errors (especially on Windows where plugin might fail)
+      // debugPrint("Notification error: $e");
+    }
   }
 
   Future<void> showCompletion(int id, String title, String body) async {
@@ -74,10 +79,36 @@ class NotificationService {
 
     final details = const NotificationDetails(android: androidDetails);
 
-    await _notifications.show(id, title, body, details);
+    try {
+      await _notifications.show(id, title, body, details);
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+
+  Future<void> showError(int id, String title, String body) async {
+    const androidDetails = AndroidNotificationDetails(
+      'downloads_error_channel',
+      'Download Errors',
+      channelDescription: 'Notifications for failed downloads',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+
+    final details = const NotificationDetails(android: androidDetails);
+
+    try {
+      await _notifications.show(id, title, body, details);
+    } catch (e) {
+      // Ignore errors
+    }
   }
 
   Future<void> cancel(int id) async {
-    await _notifications.cancel(id);
+    try {
+      await _notifications.cancel(id);
+    } catch (e) {
+      // Ignore errors
+    }
   }
 }

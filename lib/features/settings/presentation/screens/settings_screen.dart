@@ -142,6 +142,31 @@ class SettingsScreen extends StatelessWidget {
                           // --- STORAGE & PRIVACY ---
                           _buildSectionHeader(context, 'DATA & PRIVACY'),
                           NebulaListTile(
+                            title: 'Download Location',
+                            subtitle: settings.isMigrating
+                                ? 'Moving files...'
+                                : (settings.downloadPath ??
+                                      'Default (Documents)'),
+                            leading: settings.isMigrating
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.folder_open,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.7),
+                                  ),
+                            onTap: settings.isMigrating
+                                ? null
+                                : () => settings.pickDownloadPath(),
+                          ),
+                          NebulaListTile(
                             title: 'Clear Cache',
                             subtitle: 'Free up space',
                             leading: Icon(

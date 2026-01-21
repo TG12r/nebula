@@ -16,4 +16,7 @@ abstract class DownloadRepository {
 
   /// Stream of download progress (0.0 to 1.0) for a specific track
   Stream<double> getDownloadProgress(String trackId);
+
+  /// Move all downloaded files to a new directory
+  Future<void> moveDownloads(String newPath);
 }

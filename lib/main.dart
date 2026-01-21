@@ -74,7 +74,7 @@ Future<void> main() async {
   final playbackHistoryBox = await Hive.openBox('playback_history');
 
   // Initialize Download Repository
-  final downloadRepo = DownloadRepositoryImpl(downloadsBox);
+  final downloadRepo = DownloadRepositoryImpl(downloadsBox, settingsRepo);
   final historyRepo = SearchHistoryRepository(historyBox);
   final playbackHistoryRepo = PlaybackHistoryRepository(playbackHistoryBox);
 
@@ -145,6 +145,7 @@ class MainApp extends StatelessWidget {
           create: (context) {
             final controller = SettingsController(
               context.read<SettingsRepository>(),
+              context.read<DownloadRepository>(),
             );
             controller.loadSettings(); // Load initial state
             return controller;
