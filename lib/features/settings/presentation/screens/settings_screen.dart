@@ -10,7 +10,7 @@ import 'package:nebula/features/settings/domain/entities/image_quality.dart';
 import 'package:nebula/core/services/update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:nebula/core/services/windows_integration_service.dart';
+import 'package:nebula/core/services/desktop_integration_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -266,11 +266,13 @@ class SettingsScreen extends StatelessWidget {
                             },
                           ),
                           const SizedBox(height: 32),
-                          // --- WINDOWS INTEGRATION ---
-                          if (Platform.isWindows) ...[
-                            _buildSectionHeader(context, 'WINDOWS INTEGRATION'),
+                          // --- DESKTOP INTEGRATION ---
+                          if (Platform.isWindows || Platform.isLinux) ...[
+                            _buildSectionHeader(context, 'DESKTOP INTEGRATION'),
                             NebulaListTile(
-                              title: 'Add to Start Menu',
+                              title: Platform.isWindows
+                                  ? 'Add to Start Menu'
+                                  : 'Add to Applications',
                               subtitle: 'Make Nebula searchable',
                               leading: Icon(
                                 Icons.shortcut,
@@ -279,7 +281,7 @@ class SettingsScreen extends StatelessWidget {
                                 ).colorScheme.onSurface.withValues(alpha: 0.7),
                               ),
                               onTap: () async {
-                                final success = await WindowsIntegrationService
+                                final success = await DesktopIntegrationService
                                     .instance
                                     .createShortcut();
                                 if (context.mounted) {
