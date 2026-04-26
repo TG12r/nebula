@@ -134,16 +134,14 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                     children: [
                       Selector<PlayerController, String?>(
                         selector: (_, p) => p.currentTitle,
-                        builder: (_, title, __) => Text(
-                          title?.toUpperCase() ?? 'UNKNOWN TRACK',
+                        builder: (_, title, __) => NebulaMarquee(
+                          text: title?.toUpperCase() ?? 'UNKNOWN TRACK',
                           style: Theme.of(context).textTheme.headlineMedium
                               ?.copyWith(
                                 color: Colors.white,
                                 fontSize: 24,
                                 letterSpacing: -0.5,
                               ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(height: 4),

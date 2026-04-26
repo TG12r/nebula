@@ -88,11 +88,9 @@ class MiniPlayer extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title (Marquee effect simulation with TextOverflow for now)
-                    Text(
-                      controller.currentTitle?.toUpperCase() ?? 'UNKNOWN',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    // Title (Marquee effect for long titles)
+                    NebulaMarquee(
+                      text: controller.currentTitle?.toUpperCase() ?? 'UNKNOWN',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontFamily: 'Courier New',
