@@ -16,4 +16,10 @@ abstract class DownloadRepository {
 
   /// Stream of download progress (0.0 to 1.0) for a specific track
   Stream<double> getDownloadProgress(String trackId);
+
+  /// Get all downloaded tracks mapping {trackId: localPath}
+  Map<String, String> getAllDownloads();
+
+  /// Update the local path for a track (used during migration)
+  Future<void> updateDownloadPath(String trackId, String newPath);
 }

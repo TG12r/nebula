@@ -9,15 +9,18 @@ import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 import 'package:nebula/core/services/notification_service.dart';
 
+import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
+
 class DownloadRepositoryImpl implements DownloadRepository {
   final Box _box;
+  final SettingsRepository _settingsRepository;
 
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   // Progress controllers: {trackId: StreamController}
   final Map<String, StreamController<double>> _progressControllers = {};
 
-  DownloadRepositoryImpl(this._box);
+  DownloadRepositoryImpl(this._box, this._settingsRepository);
 
   @override
   bool isDownloaded(String trackId) {
@@ -46,6 +49,23 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _progressControllers[trackId] = StreamController<double>.broadcast();
     }
     return _progressControllers[trackId]!.stream;
+  }
+
+  @override
+  Map<String, String> getAllDownloads() {
+    final Map<String, String> downloads = {};
+    for (var key in _box.keys) {
+      final path = _box.get(key);
+      if (path is String) {
+        downloads[key.toString()] = path;
+      }
+    }
+    return downloads;
+  }
+
+  @override
+  Future<void> updateDownloadPath(String trackId, String newPath) async {
+    await _box.put(trackId, newPath);
   }
 
   @override
@@ -89,7 +109,14 @@ class DownloadRepositoryImpl implements DownloadRepository {
       audioStream ??= manifest.audioOnly.withHighestBitrate();
 
       // 2. Prepare File Path
-      final dir = await getApplicationDocumentsDirectory();
+      final customDir = _settingsRepository.downloadPath;
+      final Directory dir;
+      if (customDir != null && await Directory(customDir).exists()) {
+        dir = Directory(customDir);
+      } else {
+        dir = await getApplicationDocumentsDirectory();
+      }
+
       // Use sanitize simple approach
       final safeTitle = track.id; // using ID for filename is safer than title
       final extension = audioStream.container.name;

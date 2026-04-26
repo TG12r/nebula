@@ -142,6 +142,83 @@ class SettingsScreen extends StatelessWidget {
 
                           // --- STORAGE & PRIVACY ---
                           _buildSectionHeader(context, 'DATA & PRIVACY'),
+
+                          // Download Location with Inline Progress
+                          if (settings.isMigrating)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 16.0,
+                                horizontal: 16.0,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'MIGRATING LIBRARY...',
+                                        style: TextStyle(
+                                          color: AppTheme.nebulaPurple,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.2,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${(settings.migrationProgress * 100).toInt()}%',
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                          fontSize: 10,
+                                          fontFamily: 'Courier New',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(2),
+                                    child: LinearProgressIndicator(
+                                      value: settings.migrationProgress,
+                                      backgroundColor: Colors.white10,
+                                      valueColor:
+                                          const AlwaysStoppedAnimation<Color>(
+                                            AppTheme.nebulaPurple,
+                                          ),
+                                      minHeight: 4,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    settings.migrationStatus,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.5),
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            NebulaListTile(
+                              title: 'Download Location',
+                              subtitle:
+                                  settings.downloadPath ?? 'Default (Internal)',
+                              leading: Icon(
+                                Icons.folder_open,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                              ),
+                              onTap: () => settings.pickAndMigrateFolder(),
+                            ),
+
                           NebulaListTile(
                             title: 'Clear Cache',
                             subtitle: 'Free up space',

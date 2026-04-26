@@ -66,4 +66,19 @@ class SettingsRepositoryImpl implements SettingsRepository {
   Future<void> setDarkMode(bool value) async {
     await _prefs?.setBool(_kIsDarkMode, value);
   }
+
+  // Storage
+  static const String _kDownloadPath = 'settings_download_path';
+
+  @override
+  String? get downloadPath => _prefs?.getString(_kDownloadPath);
+
+  @override
+  Future<void> setDownloadPath(String? value) async {
+    if (value == null) {
+      await _prefs?.remove(_kDownloadPath);
+    } else {
+      await _prefs?.setString(_kDownloadPath, value);
+    }
+  }
 }

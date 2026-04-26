@@ -21,4 +21,8 @@ abstract class SettingsRepository {
   // Theme
   bool get isDarkMode;
   Future<void> setDarkMode(bool value);
+
+  // Storage
+  String? get downloadPath;
+  Future<void> setDownloadPath(String? value);
 }
