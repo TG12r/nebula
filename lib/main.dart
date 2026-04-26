@@ -28,6 +28,7 @@ import 'package:nebula/features/home/data/repositories/search_history_repository
 import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';
 
 import 'package:nebula/core/services/notification_service.dart';
+import 'package:nebula/core/services/windows_integration_service.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 import 'dart:io';
@@ -44,6 +45,9 @@ Future<void> main() async {
 
   // Initialize Notifications
   await NotificationService().init();
+
+  // Initialize Windows Start Menu Shortcut (First Run)
+  await WindowsIntegrationService.instance.ensureShortcutCreated();
 
   await Supabase.initialize(
     url: AppEnv.supabaseUrl,

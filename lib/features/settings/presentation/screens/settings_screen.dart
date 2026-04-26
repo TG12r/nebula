@@ -10,6 +10,7 @@ import 'package:nebula/features/settings/domain/entities/image_quality.dart';
 import 'package:nebula/core/services/update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:nebula/core/services/windows_integration_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -188,6 +189,38 @@ class SettingsScreen extends StatelessWidget {
                             },
                           ),
                           const SizedBox(height: 32),
+                          // --- WINDOWS INTEGRATION ---
+                          if (Platform.isWindows) ...[
+                            _buildSectionHeader(context, 'WINDOWS INTEGRATION'),
+                            NebulaListTile(
+                              title: 'Add to Start Menu',
+                              subtitle: 'Make Nebula searchable',
+                              leading: Icon(
+                                Icons.shortcut,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                              ),
+                              onTap: () async {
+                                final success = await WindowsIntegrationService
+                                    .instance
+                                    .createShortcut();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        success
+                                            ? 'App added to Start Menu successfully'
+                                            : 'Error creating shortcut',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 32),
+                          ],
+
                           // --- ABOUT ---
                           _buildSectionHeader(context, 'ABOUT'),
                           NebulaListTile(
