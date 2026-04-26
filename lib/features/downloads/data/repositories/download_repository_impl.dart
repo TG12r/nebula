@@ -57,13 +57,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
     // Notification ID (hash code of ID for simplicity)
     final notifId = track.id.hashCode;
-    await NotificationService().showProgress(
-      notifId,
-      "Downloading ${track.title}",
-      "Starting...",
-      0,
-      100,
-    );
+    try {
+      await NotificationService().showProgress(
+        notifId,
+        "Downloading ${track.title}",
+        "Starting...",
+        0,
+        100,
+      );
+    } catch (e) {
+      debugPrint("Notification error: $e");
+    }
 
     String? savePath;
 
@@ -112,13 +116,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
           // Throttle notifications to every 500ms
           if (DateTime.now().difference(lastNotifTime).inMilliseconds > 500) {
-            NotificationService().showProgress(
-              notifId,
-              "Downloading ${track.title}",
-              "${(progress * 100).toInt()}%",
-              (progress * 100).toInt(),
-              100,
-            );
+            try {
+              NotificationService().showProgress(
+                notifId,
+                "Downloading ${track.title}",
+                "${(progress * 100).toInt()}%",
+                (progress * 100).toInt(),
+                100,
+              );
+            } catch (e) {
+              // Ignore notification errors
+            }
             lastNotifTime = DateTime.now();
           }
         }
@@ -133,11 +141,15 @@ class DownloadRepositoryImpl implements DownloadRepository {
       controller.add(1.0); // Done
 
       // Completion Notification
-      await NotificationService().showCompletion(
-        notifId,
-        "Download Complete",
-        track.title,
-      );
+      try {
+        await NotificationService().showCompletion(
+          notifId,
+          "Download Complete",
+          track.title,
+        );
+      } catch (e) {
+        // Ignore notification errors
+      }
 
       // Close controller after delay
       Future.delayed(const Duration(seconds: 1), () {
@@ -149,7 +161,9 @@ class DownloadRepositoryImpl implements DownloadRepository {
       controller.addError(e);
       _progressControllers[track.id]?.close();
       _progressControllers.remove(track.id);
-      await NotificationService().cancel(notifId); // Or show error
+      try {
+        await NotificationService().cancel(notifId);
+      } catch (_) {}
 
       // Cleanup partial file
       if (savePath != null) {
