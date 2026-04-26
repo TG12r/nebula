@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
+import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/features/playlist/domain/entities/playlist.dart';
 import 'package:nebula/features/playlist/domain/repositories/playlist_repository.dart';
 
@@ -108,6 +109,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
               duration: Duration(
                 seconds: item['duration_seconds'] as int? ?? 0,
               ),
+              source: TrackSource.fromId(item['track_id'] as String),
             ),
           )
           .toList();

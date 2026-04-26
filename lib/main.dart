@@ -26,6 +26,7 @@ import 'package:nebula/features/downloads/domain/repositories/download_repositor
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
 import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';
+import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
 
 import 'package:nebula/core/services/notification_service.dart';
 import 'package:nebula/core/services/desktop_integration_service.dart';
@@ -77,8 +78,9 @@ Future<void> main() async {
   final historyBox = await Hive.openBox('search_history');
   final playbackHistoryBox = await Hive.openBox('playback_history');
 
-  // Initialize Download Repository
-  final downloadRepo = DownloadRepositoryImpl(downloadsBox, settingsRepo);
+  // Initialize Repositories
+  final scRepo = SoundCloudRepository();
+  final downloadRepo = DownloadRepositoryImpl(downloadsBox, settingsRepo, scRepo);
   final historyRepo = SearchHistoryRepository(historyBox);
   final playbackHistoryRepo = PlaybackHistoryRepository(playbackHistoryBox);
 
@@ -87,6 +89,7 @@ Future<void> main() async {
       audioHandler: audioHandler,
       settingsRepository: settingsRepo,
       downloadRepository: downloadRepo,
+      soundcloudRepository: scRepo,
       playlistBox: playlistBox,
       historyRepository: historyRepo,
       playbackHistoryRepository: playbackHistoryRepo,
@@ -100,6 +103,7 @@ class MainApp extends StatelessWidget {
   final NebulaAudioHandler audioHandler;
   final SettingsRepository settingsRepository;
   final DownloadRepository downloadRepository;
+  final SoundCloudRepository soundcloudRepository;
   final Box playlistBox;
   final SearchHistoryRepository historyRepository;
   final PlaybackHistoryRepository playbackHistoryRepository;
@@ -109,6 +113,7 @@ class MainApp extends StatelessWidget {
     required this.audioHandler,
     required this.settingsRepository,
     required this.downloadRepository,
+    required this.soundcloudRepository,
     required this.playlistBox,
     required this.historyRepository,
     required this.playbackHistoryRepository,
@@ -124,6 +129,7 @@ class MainApp extends StatelessWidget {
             audioHandler,
             downloadRepository,
             settingsRepository,
+            soundcloudRepository,
           ),
         ),
         Provider<SettingsRepository>.value(

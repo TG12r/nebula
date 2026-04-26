@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nebula/features/favorites/domain/repositories/favorites_repository.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
+import 'package:nebula/core/enums/track_source.dart';
 
 class FavoritesRepositoryImpl implements FavoritesRepository {
   final SupabaseClient _supabase;
@@ -30,6 +31,7 @@ class FavoritesRepositoryImpl implements FavoritesRepository {
             artist: item['artist'] as String,
             thumbnailUrl: item['thumbnail_url'] as String,
             duration: Duration(seconds: item['duration_seconds'] as int? ?? 0),
+            source: TrackSource.fromId(item['track_id'] as String),
           ),
         )
         .toList();

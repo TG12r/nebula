@@ -6,6 +6,7 @@ import 'package:nebula/features/player/presentation/logic/player_controller.dart
 import 'package:nebula/features/player/presentation/screens/full_player_screen.dart';
 import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
 import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
+import 'package:nebula/features/settings/presentation/logic/settings_controller.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -68,13 +69,17 @@ class _SearchScreenState extends State<SearchScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 24.0),
                       child: Column(
                         children: [
-                          NebulaInput(
-                            label: 'INPUT COMMAND',
-                            controller: _searchController,
-                            hintText: '> Search database...',
-                            technicalSpec: 'MODE: QUERY // DB: YT_PUBLIC',
-                            suffixIcon: const Icon(Icons.search),
-                            onSubmitted: (query) => player.search(query),
+                          Consumer<SettingsController>(
+                            builder: (context, settings, _) {
+                              return NebulaInput(
+                                label: 'INPUT COMMAND',
+                                controller: _searchController,
+                                hintText: '> Search database...',
+                                technicalSpec: 'MODE: QUERY // DB: ${settings.searchSource.publicLabel}',
+                                suffixIcon: const Icon(Icons.search),
+                                onSubmitted: (query) => player.search(query),
+                              );
+                            },
                           ),
                           if (player.isSearching)
                             const Padding(
@@ -285,7 +290,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     // 2. Start Playback Logic (Async/Heavy)
     // We do NOT await this before navigating.
-    final error = await player.playYoutubeVideo(video);
+    final error = await player.playTrack(video);
 
     if (context.mounted) {
       setState(() => _loadingTrackId = null);

@@ -127,7 +127,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   // Actions forwarded to Repository
-  Future<String?> playYoutubeVideo(Track track) async {
+  Future<String?> playTrack(Track track) async {
     return await _repository.play(track);
   }
 

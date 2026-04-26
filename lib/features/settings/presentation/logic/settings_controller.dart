@@ -6,6 +6,7 @@ import 'package:nebula/features/downloads/domain/repositories/download_repositor
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:nebula/core/enums/track_source.dart';
 
 class SettingsController extends ChangeNotifier {
   final SettingsRepository _repository;
@@ -28,6 +29,14 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> toggleTheme() async {
     await _repository.setDarkMode(!isDarkMode);
+    notifyListeners();
+  }
+
+  // Search
+  TrackSource get searchSource => _repository.searchSource;
+
+  Future<void> setSearchSource(TrackSource source) async {
+    await _repository.setSearchSource(source);
     notifyListeners();
   }
 

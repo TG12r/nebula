@@ -10,17 +10,24 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 import 'package:nebula/core/services/notification_service.dart';
 
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
+import 'package:nebula/core/enums/track_source.dart';
+import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
 
 class DownloadRepositoryImpl implements DownloadRepository {
   final Box _box;
   final SettingsRepository _settingsRepository;
+  final SoundCloudRepository _scRepository;
 
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   // Progress controllers: {trackId: StreamController}
   final Map<String, StreamController<double>> _progressControllers = {};
 
-  DownloadRepositoryImpl(this._box, this._settingsRepository);
+  DownloadRepositoryImpl(
+    this._box, 
+    this._settingsRepository,
+    this._scRepository,
+  );
 
   @override
   bool isDownloaded(String trackId) {
@@ -92,23 +99,6 @@ class DownloadRepositoryImpl implements DownloadRepository {
     String? savePath;
 
     try {
-      // 1. Get Audio URL with specific client
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        track.id,
-        ytClients: [yt_lib.YoutubeApiClient.androidVr],
-      );
-
-      yt_lib.AudioOnlyStreamInfo? audioStream;
-      try {
-        audioStream = manifest.audioOnly.firstWhere(
-          (s) =>
-              s.container.name.toLowerCase() == 'm4a' ||
-              s.container.name.toLowerCase() == 'mp4',
-        );
-      } catch (_) {}
-      audioStream ??= manifest.audioOnly.withHighestBitrate();
-
-      // 2. Prepare File Path
       final customDir = _settingsRepository.downloadPath;
       final Directory dir;
       if (customDir != null && await Directory(customDir).exists()) {
@@ -117,54 +107,101 @@ class DownloadRepositoryImpl implements DownloadRepository {
         dir = await getApplicationDocumentsDirectory();
       }
 
-      // Use sanitize simple approach
-      final safeTitle = track.id; // using ID for filename is safer than title
-      final extension = audioStream.container.name;
-      savePath = '${dir.path}/$safeTitle.$extension';
+      final safeTitle = TrackSource.stripPrefix(track.id);
+      
+      if (track.source == TrackSource.soundcloud) {
+        // --- SoundCloud Download ---
+        final streamUrl = await _scRepository.getStreamUrl(track.id);
+        if (streamUrl == null) throw Exception("Could not get SoundCloud stream URL");
 
-      // 3. Download using YoutubeExplode Stream (Avoids Dio 403)
-      final stream = _yt.videos.streamsClient.get(audioStream);
-      final file = File(savePath);
-      final fileSink = file.openWrite();
+        savePath = '${dir.path}/sc_${safeTitle}.mp3';
+        final file = File(savePath);
+        final fileSink = file.openWrite();
 
-      final totalBytes = audioStream.size.totalBytes;
-      var receivedBytes = 0;
-      var lastNotifTime = DateTime.now();
+        final client = HttpClient();
+        final request = await client.getUrl(Uri.parse(streamUrl));
+        final response = await request.close();
 
-      await for (final data in stream) {
-        // Write chunk
-        fileSink.add(data);
+        final totalBytes = response.contentLength;
+        var receivedBytes = 0;
+        var lastNotifTime = DateTime.now();
 
-        // Update progress
-        receivedBytes += data.length;
-        if (totalBytes != 0) {
-          final progress = receivedBytes / totalBytes;
-          controller.add(progress);
-
-          // Throttle notifications to every 500ms
-          if (DateTime.now().difference(lastNotifTime).inMilliseconds > 500) {
-            try {
-              NotificationService().showProgress(
-                notifId,
-                "Downloading ${track.title}",
-                "${(progress * 100).toInt()}%",
-                (progress * 100).toInt(),
-                100,
-              );
-            } catch (e) {
-              // Ignore notification errors
+        await for (final data in response) {
+          fileSink.add(data);
+          receivedBytes += data.length;
+          if (totalBytes != -1) {
+            final progress = receivedBytes / totalBytes;
+            controller.add(progress);
+            if (DateTime.now().difference(lastNotifTime).inMilliseconds > 500) {
+              try {
+                NotificationService().showProgress(
+                  notifId,
+                  "Downloading ${track.title}",
+                  "${(progress * 100).toInt()}%",
+                  (progress * 100).toInt(),
+                  100,
+                );
+              } catch (_) {}
+              lastNotifTime = DateTime.now();
             }
-            lastNotifTime = DateTime.now();
           }
         }
+        await fileSink.flush();
+        await fileSink.close();
+      } else {
+        // --- YouTube Download ---
+        final manifest = await _yt.videos.streamsClient.getManifest(
+          track.rawId,
+          ytClients: [yt_lib.YoutubeApiClient.androidVr],
+        );
+
+        yt_lib.AudioOnlyStreamInfo? audioStream;
+        try {
+          audioStream = manifest.audioOnly.firstWhere(
+            (s) =>
+                s.container.name.toLowerCase() == 'm4a' ||
+                s.container.name.toLowerCase() == 'mp4',
+          );
+        } catch (_) {}
+        audioStream ??= manifest.audioOnly.withHighestBitrate();
+
+        final extension = audioStream.container.name;
+        savePath = '${dir.path}/yt_${safeTitle}.$extension';
+
+        final stream = _yt.videos.streamsClient.get(audioStream);
+        final file = File(savePath);
+        final fileSink = file.openWrite();
+
+        final totalBytes = audioStream.size.totalBytes;
+        var receivedBytes = 0;
+        var lastNotifTime = DateTime.now();
+
+        await for (final data in stream) {
+          fileSink.add(data);
+          receivedBytes += data.length;
+          if (totalBytes != 0) {
+            final progress = receivedBytes / totalBytes;
+            controller.add(progress);
+            if (DateTime.now().difference(lastNotifTime).inMilliseconds > 500) {
+              try {
+                NotificationService().showProgress(
+                  notifId,
+                  "Downloading ${track.title}",
+                  "${(progress * 100).toInt()}%",
+                  (progress * 100).toInt(),
+                  100,
+                );
+              } catch (_) {}
+              lastNotifTime = DateTime.now();
+            }
+          }
+        }
+        await fileSink.flush();
+        await fileSink.close();
       }
 
-      // Close file
-      await fileSink.flush();
-      await fileSink.close();
-
-      // 4. Save to Hive
-      await _box.put(track.id, savePath);
+      // 4. Save to Hive using storageId
+      await _box.put(track.storageId, savePath);
       controller.add(1.0); // Done
 
       // Completion Notification

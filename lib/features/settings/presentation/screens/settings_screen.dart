@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/settings/presentation/logic/settings_controller.dart';
 import 'package:nebula/features/settings/domain/entities/image_quality.dart';
+import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/core/services/update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -108,6 +109,36 @@ class SettingsScreen extends StatelessWidget {
                               }).toList(),
                               onChanged: (val) {
                                 if (val != null) settings.setImageQuality(val);
+                              },
+                            ),
+                          ),
+                          NebulaListTile(
+                            title: 'Search Engine',
+                            subtitle: 'Select preferred database',
+                            trailing: DropdownButton<TrackSource>(
+                              value: settings.searchSource,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: AppTheme.nebulaPurple,
+                              ),
+                              items: TrackSource.values.map((source) {
+                                return DropdownMenuItem(
+                                  value: source,
+                                  child: Text(
+                                    source.name.toUpperCase(),
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 12,
+                                      fontFamily: 'Courier New',
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val != null) settings.setSearchSource(val);
                               },
                             ),
                           ),

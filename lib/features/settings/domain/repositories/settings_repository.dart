@@ -1,4 +1,5 @@
 import 'package:nebula/features/settings/domain/entities/image_quality.dart';
+import 'package:nebula/core/enums/track_source.dart';
 
 abstract class SettingsRepository {
   Future<void> init();
@@ -25,4 +26,7 @@ abstract class SettingsRepository {
   // Storage
   String? get downloadPath;
   Future<void> setDownloadPath(String? value);
+  // Search Engine
+  TrackSource get searchSource;
+  Future<void> setSearchSource(TrackSource source);
 }

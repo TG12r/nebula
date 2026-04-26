@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
 import 'package:nebula/features/settings/domain/entities/image_quality.dart';
+import 'package:nebula/core/enums/track_source.dart';
 
 class SettingsRepositoryImpl implements SettingsRepository {
   SharedPreferences? _prefs;
@@ -31,6 +32,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
   static const String _kHighQuality = 'settings_high_quality';
   static const String _kGapless = 'settings_gapless';
   static const String _kMetrics = 'settings_metrics';
+  static const String _kSearchSource = 'settings_search_source';
 
   @override
   bool get highAudioQuality => _prefs?.getBool(_kHighQuality) ?? true;
@@ -54,6 +56,21 @@ class SettingsRepositoryImpl implements SettingsRepository {
   @override
   Future<void> setAnonymousMetrics(bool value) async {
     await _prefs?.setBool(_kMetrics, value);
+  }
+
+  // Search Source
+  @override
+  TrackSource get searchSource {
+    final index = _prefs?.getInt(_kSearchSource) ?? 0;
+    if (index >= 0 && index < TrackSource.values.length) {
+      return TrackSource.values[index];
+    }
+    return TrackSource.values[0];
+  }
+
+  @override
+  Future<void> setSearchSource(TrackSource value) async {
+    await _prefs?.setInt(_kSearchSource, value.index);
   }
 
   // Theme

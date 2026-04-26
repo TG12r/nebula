@@ -11,17 +11,21 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
+import 'package:nebula/core/enums/track_source.dart';
+import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
 
 class PlayerRepositoryImpl implements PlayerRepository {
   final NebulaAudioHandler _audioHandler;
   final DownloadRepository _downloadRepository;
   final SettingsRepository _settingsRepository;
+  final SoundCloudRepository _scRepository;
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   PlayerRepositoryImpl(
     this._audioHandler,
     this._downloadRepository,
     this._settingsRepository,
+    this._scRepository,
   );
 
   @override
@@ -184,6 +188,13 @@ class PlayerRepositoryImpl implements PlayerRepository {
   @override
   Future<List<Track>> search(String query) async {
     if (query.trim().isEmpty) return [];
+    
+    final preferredSource = _settingsRepository.searchSource;
+    
+    if (preferredSource == TrackSource.soundcloud) {
+      return _scRepository.searchTracks(query);
+    }
+
     try {
       final results = await _yt.search.search(query);
       return results
@@ -194,6 +205,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
               artist: v.author,
               thumbnailUrl: v.thumbnails.mediumResUrl,
               duration: v.duration ?? Duration.zero,
+              source: TrackSource.youtube,
             ),
           )
           .toList();
@@ -217,6 +229,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
       artist: item.artist ?? 'Unknown',
       thumbnailUrl: item.artUri.toString(),
       duration: item.duration ?? Duration.zero,
+      source: TrackSource.fromId(item.id),
     );
   }
 
@@ -228,7 +241,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
         return AudioSource.file(
           localPath,
           tag: MediaItem(
-            id: track.id,
+            id: track.storageId,
             title: track.title,
             artist: track.artist,
             artUri: Uri.parse(track.thumbnailUrl),
@@ -238,39 +251,38 @@ class PlayerRepositoryImpl implements PlayerRepository {
       }
 
       // 2. Stream Online
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        track.id,
-        ytClients: [yt_lib.YoutubeApiClient.androidVr],
-      );
+      String? streamUrl;
 
-      yt_lib.AudioOnlyStreamInfo? audioStream;
-
-      // Select Quality based on Settings
-      final highQuality = _settingsRepository.highAudioQuality;
-
-      if (highQuality) {
-        // Best Quality
-        audioStream = manifest.audioOnly.withHighestBitrate();
+      if (track.source == TrackSource.soundcloud) {
+        streamUrl = await _scRepository.getStreamUrl(track.id);
       } else {
-        // Data Saver / Lower Quality
-        // Sort by bitrate ascending (lowest first)
-        final sorted = manifest.audioOnly.sortByBitrate();
-        if (sorted.isNotEmpty) {
-          // We pick the first one which is usually the lowest bitrate
-          // Or we could pick 'middle' to avoid terrible quality.
-          // Generally lowest is around 48kbps or 128kbps depending on codec.
-          // Let's safe pick index 0 (lowest) for "Data Saver".
-          audioStream = sorted.first;
+        // YouTube Stream
+        final manifest = await _yt.videos.streamsClient.getManifest(
+          track.rawId,
+          ytClients: [yt_lib.YoutubeApiClient.androidVr],
+        );
+
+        yt_lib.AudioOnlyStreamInfo? audioStream;
+        final highQuality = _settingsRepository.highAudioQuality;
+
+        if (highQuality) {
+          audioStream = manifest.audioOnly.withHighestBitrate();
+        } else {
+          final sorted = manifest.audioOnly.sortByBitrate();
+          if (sorted.isNotEmpty) {
+            audioStream = sorted.first;
+          }
         }
+        audioStream ??= manifest.audioOnly.withHighestBitrate();
+        streamUrl = audioStream.url.toString();
       }
 
-      // Fallback if selection failed (shouldn't happen if list not empty)
-      audioStream ??= manifest.audioOnly.withHighestBitrate();
+      if (streamUrl == null) return null;
 
       return AudioSource.uri(
-        Uri.parse(audioStream.url.toString()),
+        Uri.parse(streamUrl),
         tag: MediaItem(
-          id: track.id,
+          id: track.storageId,
           title: track.title,
           artist: track.artist,
           artUri: Uri.parse(track.thumbnailUrl),
@@ -278,7 +290,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
         ),
       );
     } catch (e) {
-      debugPrint("Error extracting audio for ${track.title}: $e");
+      debugPrint("Error extracting audio for ${track.title} (${track.source}): $e");
       return null;
     }
   }
