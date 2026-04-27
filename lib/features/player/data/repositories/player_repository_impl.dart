@@ -238,16 +238,36 @@ class PlayerRepositoryImpl implements PlayerRepository {
       // 1. Check Offline File
       final localPath = _downloadRepository.getLocalPath(track.id);
       if (localPath != null && File(localPath).existsSync()) {
-        return AudioSource.file(
-          localPath,
-          tag: MediaItem(
-            id: track.storageId,
-            title: track.title,
-            artist: track.artist,
-            artUri: Uri.parse(track.thumbnailUrl),
-            duration: track.duration,
-          ),
-        );
+        // Validate the file is actual audio, not a corrupt HLS manifest
+        final file = File(localPath);
+        final fileSize = await file.length();
+        
+        if (fileSize < 1024) {
+          // File is suspiciously small, likely corrupt or an HLS manifest
+          debugPrint("Warning: Downloaded file too small (${fileSize}B), re-streaming: ${track.title}");
+        } else {
+          // Quick check: read first bytes to detect M3U8/HLS manifest
+          final firstBytes = await file.openRead(0, 10).fold<List<int>>(
+            [],
+            (prev, chunk) => prev..addAll(chunk),
+          );
+          final header = String.fromCharCodes(firstBytes).trim();
+          
+          if (header.startsWith('#EXTM3U')) {
+            debugPrint("Warning: Downloaded file is HLS manifest, re-streaming: ${track.title}");
+          } else {
+            return AudioSource.file(
+              localPath,
+              tag: MediaItem(
+                id: track.storageId,
+                title: track.title,
+                artist: track.artist,
+                artUri: Uri.parse(track.thumbnailUrl),
+                duration: track.duration,
+              ),
+            );
+          }
+        }
       }
 
       // 2. Stream Online

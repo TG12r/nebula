@@ -53,10 +53,20 @@ class SoundCloudRepository {
       final rawId = TrackSource.stripPrefix(trackId);
       final streams = await _sc.tracks.getStreams(int.parse(rawId));
       
-      if (streams.isNotEmpty) {
-        return streams.first.url;
+      if (streams.isEmpty) return null;
+
+      // Prefer progressive (direct URL) over HLS (M3U8 playlist).
+      // HLS streams cannot be directly saved as audio files and may cause
+      // "Source error" in just_audio when played back from disk.
+      final progressive = streams.where((s) => s.protocol == 'progressive');
+      if (progressive.isNotEmpty) {
+        debugPrint("SoundCloud: Using progressive stream for $rawId");
+        return progressive.first.url;
       }
-      return null;
+
+      // Fallback to any available stream (e.g. HLS for streaming-only)
+      debugPrint("SoundCloud: No progressive stream, falling back to ${streams.first.protocol} for $rawId");
+      return streams.first.url;
     } catch (e) {
       debugPrint("SoundCloud: Stream URL error: $e");
       return null;
