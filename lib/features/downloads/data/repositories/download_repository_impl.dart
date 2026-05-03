@@ -31,21 +31,47 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
   @override
   bool isDownloaded(String trackId) {
-    final path = _box.get(trackId);
+    // 1. Try with exact ID (usually includes prefix)
+    var path = _box.get(trackId);
+
+    // 2. Fallback: Try without prefix (for older tracks)
+    if (path == null) {
+      final safeId = TrackSource.stripPrefix(trackId);
+      if (safeId != trackId) {
+        path = _box.get(safeId);
+      }
+    }
+
     if (path != null && File(path).existsSync()) {
       return true;
     }
-    // Cleanup if file missing
+
+    // Cleanup if record exists but file is missing
     if (path != null) {
       _box.delete(trackId);
+      final safeId = TrackSource.stripPrefix(trackId);
+      if (safeId != trackId) {
+        _box.delete(safeId);
+      }
     }
     return false;
   }
 
   @override
   String? getLocalPath(String trackId) {
-    if (isDownloaded(trackId)) {
-      return _box.get(trackId);
+    // 1. Try with exact ID
+    var path = _box.get(trackId);
+
+    // 2. Fallback: Try without prefix
+    if (path == null) {
+      final safeId = TrackSource.stripPrefix(trackId);
+      if (safeId != trackId) {
+        path = _box.get(safeId);
+      }
+    }
+
+    if (path != null && File(path).existsSync()) {
+      return path;
     }
     return null;
   }
@@ -245,7 +271,21 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
   @override
   Future<void> deleteTrack(String trackId) async {
-    final path = _box.get(trackId);
+    var path = _box.get(trackId);
+
+    // Fallback: Try without prefix
+    if (path == null) {
+      final safeId = TrackSource.stripPrefix(trackId);
+      if (safeId != trackId) {
+        path = _box.get(safeId);
+        if (path != null) {
+          await _box.delete(safeId);
+        }
+      }
+    } else {
+      await _box.delete(trackId);
+    }
+
     if (path != null) {
       try {
         final file = File(path);
@@ -256,7 +296,6 @@ class DownloadRepositoryImpl implements DownloadRepository {
         debugPrint("Error deleting file: $e");
       }
     }
-    await _box.delete(trackId);
   }
 
   StreamController<double> _getProgressController(String trackId) {
