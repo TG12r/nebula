@@ -29,47 +29,55 @@ class DownloadRepositoryImpl implements DownloadRepository {
     this._scRepository,
   );
 
-  @override
-  bool isDownloaded(String trackId) {
-    // 1. Try with exact ID (usually includes prefix)
-    var path = _box.get(trackId);
+  String? _findStoredKey(String trackId) {
+    // 1. Check exact key
+    if (_box.containsKey(trackId)) return trackId;
 
-    // 2. Fallback: Try without prefix (for older tracks)
-    if (path == null) {
-      final safeId = TrackSource.stripPrefix(trackId);
-      if (safeId != trackId) {
-        path = _box.get(safeId);
-      }
+    // 2. Check stripped key
+    final safeId = TrackSource.stripPrefix(trackId);
+    if (safeId != trackId && _box.containsKey(safeId)) {
+      return safeId;
     }
 
+    // 3. Check prefixed keys if input is raw
+    if (!trackId.startsWith('yt:') && !trackId.startsWith('sc:')) {
+      final ytKey = 'yt:$trackId';
+      if (_box.containsKey(ytKey)) return ytKey;
+
+      final scKey = 'sc:$trackId';
+      if (_box.containsKey(scKey)) return scKey;
+    }
+
+    return null;
+  }
+
+  @override
+  bool isDownloaded(String trackId) {
+    final key = _findStoredKey(trackId);
+    if (key == null) return false;
+
+    final path = _box.get(key);
     if (path != null && File(path).existsSync()) {
       return true;
     }
 
     // Cleanup if record exists but file is missing
     if (path != null) {
-      _box.delete(trackId);
+      _box.delete(key);
       final safeId = TrackSource.stripPrefix(trackId);
-      if (safeId != trackId) {
-        _box.delete(safeId);
-      }
+      _box.delete(safeId);
+      _box.delete('yt:$safeId');
+      _box.delete('sc:$safeId');
     }
     return false;
   }
 
   @override
   String? getLocalPath(String trackId) {
-    // 1. Try with exact ID
-    var path = _box.get(trackId);
+    final key = _findStoredKey(trackId);
+    if (key == null) return null;
 
-    // 2. Fallback: Try without prefix
-    if (path == null) {
-      final safeId = TrackSource.stripPrefix(trackId);
-      if (safeId != trackId) {
-        path = _box.get(safeId);
-      }
-    }
-
+    final path = _box.get(key);
     if (path != null && File(path).existsSync()) {
       return path;
     }
@@ -271,20 +279,18 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
   @override
   Future<void> deleteTrack(String trackId) async {
-    var path = _box.get(trackId);
-
-    // Fallback: Try without prefix
-    if (path == null) {
-      final safeId = TrackSource.stripPrefix(trackId);
-      if (safeId != trackId) {
-        path = _box.get(safeId);
-        if (path != null) {
-          await _box.delete(safeId);
-        }
-      }
-    } else {
-      await _box.delete(trackId);
+    final key = _findStoredKey(trackId);
+    String? path;
+    if (key != null) {
+      path = _box.get(key);
+      await _box.delete(key);
     }
+
+    // Cleanup other potential aliases
+    final safeId = TrackSource.stripPrefix(trackId);
+    await _box.delete(safeId);
+    await _box.delete('yt:$safeId');
+    await _box.delete('sc:$safeId');
 
     if (path != null) {
       try {
