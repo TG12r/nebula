@@ -184,10 +184,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
         await fileSink.close();
       } else {
         // --- YouTube Download ---
-        final manifest = await _yt.videos.streamsClient.getManifest(
-          track.rawId,
-          ytClients: [yt_lib.YoutubeApiClient.androidVr],
-        );
+        final manifest = await _yt.videos.streamsClient.getManifest(track.rawId);
 
         yt_lib.AudioOnlyStreamInfo? audioStream;
         try {

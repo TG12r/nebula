@@ -20,7 +20,9 @@ dependencies:
   audio_service: ^0.18.12
   rxdart: ^0.27.7
   # Source
-  youtube_explode_dart: ^3.0.5
+  youtube_explode_dart:
+    git:
+      url: https://github.com/its-ashutosh-pathak/youtube_explode_dart.git
   # State Management (Simple for now)
   provider: ^6.1.1
   # UI

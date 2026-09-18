@@ -277,10 +277,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
         streamUrl = await _scRepository.getStreamUrl(track.id);
       } else {
         // YouTube Stream
-        final manifest = await _yt.videos.streamsClient.getManifest(
-          track.rawId,
-          ytClients: [yt_lib.YoutubeApiClient.androidVr],
-        );
+        final manifest = await _yt.videos.streamsClient.getManifest(track.rawId);
 
         yt_lib.AudioOnlyStreamInfo? audioStream;
         final highQuality = _settingsRepository.highAudioQuality;
