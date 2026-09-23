@@ -24,10 +24,7 @@ class NebulaImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Watch settings for changes
-    final quality = context.select<SettingsController, ImageQuality>(
-      (s) => s.imageQuality,
-    );
+    final quality = context.watch<SettingsController>().imageQuality;
 
     final cacheWidth = _calculateCacheWidth(quality, isThumbnail);
 

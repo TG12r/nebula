@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 import 'package:nebula/features/player/presentation/screens/full_player_screen.dart';
+import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
+import 'package:nebula/features/player/domain/entities/track.dart';
+import 'package:nebula/shared/widgets/widgets.dart';
 
 class HomeFeedScreen extends StatelessWidget {
   const HomeFeedScreen({super.key});
@@ -10,7 +13,7 @@ class HomeFeedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 96.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -57,10 +60,11 @@ class HomeFeedScreen extends StatelessWidget {
 
             const SizedBox(height: 40),
 
-            // Recently Played Section
-            Consumer<PlayerController>(
-              builder: (context, player, child) {
-                if (player.playbackHistory.isEmpty) return const SizedBox();
+            // Recently Played Section (Isolated from position ticks)
+            Selector<PlayerController, List<Track>>(
+              selector: (_, p) => p.playbackHistory,
+              builder: (context, playbackHistory, child) {
+                if (playbackHistory.isEmpty) return const SizedBox();
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -75,11 +79,11 @@ class HomeFeedScreen extends StatelessWidget {
                       height: 140,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
-                        itemCount: player.playbackHistory.length,
+                        itemCount: playbackHistory.length,
                         separatorBuilder: (context, index) =>
                             const SizedBox(width: 12),
                         itemBuilder: (context, index) {
-                          final track = player.playbackHistory[index];
+                          final track = playbackHistory[index];
                           return Container(
                             width: 100,
                             margin: const EdgeInsets.only(
@@ -94,8 +98,8 @@ class HomeFeedScreen extends StatelessWidget {
                                   ),
                                 );
                                 // Play as playlist (Queue = History)
-                                player.playPlaylist(
-                                  player.playbackHistory,
+                                context.read<JamController>().playPlaylist(
+                                  playbackHistory,
                                   initialIndex: index,
                                 );
                               },
@@ -115,11 +119,10 @@ class HomeFeedScreen extends StatelessWidget {
                                               .withValues(alpha: 0.1),
                                         ),
                                       ),
-                                      child: Image.network(
-                                        track.thumbnailUrl,
+                                      child: NebulaImage(
+                                        url: track.thumbnailUrl,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (c, o, s) =>
-                                            const Icon(Icons.music_note),
+                                        isThumbnail: true,
                                       ),
                                     ),
                                   ),
@@ -224,9 +227,12 @@ class HomeFeedScreen extends StatelessWidget {
                 backgroundColor: accent,
               ),
             );
-            final success = await context.read<PlayerController>().playMix(
+            final success = await context.read<JamController>().playMix(
               query,
             );
+            // Note: playMix internally calls playPlaylist on PlayerController.
+            // In a Jam, the host's queue is set but not broadcast track-by-track.
+            // This is acceptable since mixes are local discovery features.
             if (!success && context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(

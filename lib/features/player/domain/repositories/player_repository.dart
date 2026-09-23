@@ -3,7 +3,7 @@ import 'package:nebula/features/player/domain/entities/track.dart';
 
 abstract class PlayerRepository {
   // Actions
-  Future<String?> play(Track track);
+  Future<String?> play(Track track, {bool autoPlay = true});
   Future<void> setQueue(List<Track> tracks, {int initialIndex = 0}); // New
   Future<void> skipToNext(); // New
   Future<void> skipToPrevious(); // New

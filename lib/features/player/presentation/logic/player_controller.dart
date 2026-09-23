@@ -127,8 +127,8 @@ class PlayerController extends ChangeNotifier {
   }
 
   // Actions forwarded to Repository
-  Future<String?> playTrack(Track track) async {
-    return await _repository.play(track);
+  Future<String?> playTrack(Track track, {bool autoPlay = true}) async {
+    return await _repository.play(track, autoPlay: autoPlay);
   }
 
   Future<void> playPlaylist(
@@ -166,6 +166,18 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> skipToQueueItem(int index) async {
     await _repository.skipToQueueItem(index);
+  }
+
+  Future<void> pause() async {
+    if (_isPlaying) {
+      await _repository.pause();
+    }
+  }
+
+  Future<void> resume() async {
+    if (!_isPlaying) {
+      await _repository.resume();
+    }
   }
 
   Future<void> togglePlay() async {

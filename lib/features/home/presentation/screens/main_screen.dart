@@ -39,11 +39,13 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Global Background
+          // Global Background (Cached into GPU layer with RepaintBoundary)
           Positioned.fill(
-            child: CustomPaint(
-              painter: GridPainter(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: GridPainter(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+                ),
               ),
             ),
           ),

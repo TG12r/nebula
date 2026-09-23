@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
+import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 import 'package:nebula/core/theme/app_theme.dart';
-
 import 'package:nebula/features/player/presentation/widgets/mini_player.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 
@@ -82,7 +82,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                   fontFamily: 'Courier New',
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.3),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.3),
                                 ),
                           ),
                         );
@@ -90,7 +90,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
                       return Column(
                         children: [
-                          // Action Buttons Row (Like PlaylistDetailScreen)
+                          // Action Buttons Row
                           Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16.0,
@@ -144,7 +144,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
                                     if (_isShuffleEnabled) {
                                       context
-                                          .read<PlayerController>()
+                                          .read<JamController>()
                                           .shuffleQueue();
                                       ScaffoldMessenger.of(
                                         context,
@@ -158,6 +158,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                   },
                                 ),
                                 const SizedBox(width: 8),
+
                                 // Play All Button
                                 Column(
                                   mainAxisSize: MainAxisSize.min,
@@ -174,7 +175,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .onSurface
-                                                .withOpacity(0.5),
+                                                .withValues(alpha: 0.5),
                                           ),
                                     ),
                                     const SizedBox(height: 4),
@@ -182,8 +183,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                       height: 48,
                                       child: ElevatedButton(
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              AppTheme.nebulaPurple,
+                                          backgroundColor: AppTheme.nebulaPurple,
                                           foregroundColor: Colors.white,
                                           elevation: 0,
                                           shape: const RoundedRectangleBorder(
@@ -195,7 +195,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                         ),
                                         onPressed: () {
                                           context
-                                              .read<PlayerController>()
+                                              .read<JamController>()
                                               .playPlaylist(
                                                 favoritesCtrl.favorites,
                                                 shuffle: _isShuffleEnabled,
@@ -220,153 +220,87 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
                           Expanded(
                             child: ListView.builder(
-                              itemExtent: 80.0, // Fixed height for performance
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
                               itemCount: favoritesCtrl.favorites.length,
                               itemBuilder: (context, index) {
                                 final track = favoritesCtrl.favorites[index];
-                                return Dismissible(
-                                  key: ValueKey(track.id),
-                                  direction: DismissDirection.horizontal,
-                                  background: Container(
-                                    alignment: Alignment.centerLeft,
-                                    padding: const EdgeInsets.only(left: 20),
-                                    color: Colors.green,
-                                    child: const Icon(
-                                      Icons.queue_music,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  secondaryBackground: Container(
-                                    alignment: Alignment.centerRight,
-                                    padding: const EdgeInsets.only(right: 20),
-                                    color: Colors.red,
-                                    child: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  confirmDismiss: (direction) async {
-                                    if (direction ==
-                                        DismissDirection.startToEnd) {
-                                      context
-                                          .read<PlayerController>()
-                                          .addToQueue(track);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text("Added to queue"),
-                                          duration: Duration(seconds: 1),
-                                        ),
-                                      );
-                                      return false;
-                                    } else if (direction ==
-                                        DismissDirection.endToStart) {
-                                      final confirm = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          backgroundColor: AppTheme.cmfDarkGrey,
-                                          title: const Text(
-                                            'REMOVE FROM FAVORITES?',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontFamily: 'Courier New',
-                                            ),
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, false),
-                                              child: const Text(
-                                                'CANCEL',
-                                                style: TextStyle(
-                                                  color: Colors.white54,
-                                                ),
-                                              ),
-                                            ),
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, true),
-                                              child: const Text(
-                                                'REMOVE',
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
 
-                                      if (confirm == true) {
+                                return Selector<PlayerController, (String?, bool)>(
+                                  selector: (_, p) => (p.currentTrack?.id, p.isPlaying),
+                                  builder: (_, playState, __) {
+                                    final isCurrent = playState.$1 == track.id;
+                                    final isPlaying = isCurrent && playState.$2;
+
+                                    return NebulaTrackTile(
+                                      track: track,
+                                      isCurrentTrack: isCurrent,
+                                      isPlaying: isPlaying,
+                                      indexNumber: (index + 1).toString().padLeft(2, '0'),
+                                      enableSwipeToQueue: true,
+                                      onSwipeQueue: () async {
+                                        await context
+                                            .read<JamController>()
+                                            .addToQueue(track);
                                         if (context.mounted) {
-                                          favoritesCtrl.toggleFavorite(track);
-                                          // Toggle removes it from list immediately via NotifyListeners
-                                          // So we return false to avoid Dismissible confusion, or true if we handle it
-                                          // Just like Playlist, false is safer with Consumer rebuild
-                                          return false;
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text("Added to queue"),
+                                              duration: Duration(seconds: 1),
+                                            ),
+                                          );
                                         }
-                                      }
-                                      return false;
-                                    }
-                                    return false;
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withOpacity(0.1),
-                                      ),
-                                      color: Colors.white.withOpacity(0.05),
-                                    ),
-                                    child: ListTile(
-                                      contentPadding: const EdgeInsets.all(8),
-                                      leading: Container(
-                                        width: 50,
-                                        height: 50,
-                                        color: AppTheme.cmfDarkGrey,
-                                        child: track.thumbnailUrl.isNotEmpty
-                                            ? NebulaImage(
-                                                url: track.thumbnailUrl,
-                                                fit: BoxFit.cover,
-                                                isThumbnail: true,
-                                              )
-                                            : const Icon(
-                                                Icons.music_note,
+                                      },
+                                      enableSwipeToRemove: true,
+                                      onSwipeRemove: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            backgroundColor: AppTheme.cmfDarkGrey,
+                                            title: const Text(
+                                              'REMOVE FROM FAVORITES?',
+                                              style: TextStyle(
                                                 color: Colors.white,
+                                                fontFamily: 'Courier New',
                                               ),
-                                      ),
-                                      title: Text(
-                                        track.title.toUpperCase(),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontFamily: 'Courier New',
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        track.artist.toUpperCase(),
-                                        style: TextStyle(
-                                          fontFamily: 'Courier New',
-                                          color: Colors.white.withOpacity(0.6),
-                                          fontSize: 12,
-                                        ),
-                                      ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context, false),
+                                                child: const Text(
+                                                  'CANCEL',
+                                                  style: TextStyle(
+                                                    color: Colors.white54,
+                                                  ),
+                                                ),
+                                              ),
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context, true),
+                                                child: const Text(
+                                                  'REMOVE',
+                                                  style: TextStyle(
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+
+                                        if (confirm == true && context.mounted) {
+                                          favoritesCtrl.toggleFavorite(track);
+                                        }
+                                        return false;
+                                      },
                                       trailing: Consumer<DownloadController>(
                                         builder: (context, downloader, _) {
-                                          final isDownloaded = downloader
-                                              .isDownloaded(track.id);
-                                          final isDownloading = downloader
-                                              .isDownloading(track.id);
-                                          final progress = downloader
-                                              .getProgress(track.id);
+                                          final isDownloaded =
+                                              downloader.isDownloaded(track.id);
+                                          final isDownloading =
+                                              downloader.isDownloading(track.id);
+                                          final progress =
+                                              downloader.getProgress(track.id);
 
                                           if (isDownloading) {
                                             return SizedBox(
@@ -398,15 +332,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                       ),
                                       onTap: () {
                                         context
-                                            .read<PlayerController>()
+                                            .read<JamController>()
                                             .playPlaylist(
                                               favoritesCtrl.favorites,
                                               initialIndex: index,
                                               shuffle: _isShuffleEnabled,
                                             );
                                       },
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 );
                               },
                             ),

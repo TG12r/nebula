@@ -21,13 +21,15 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          // Background Grid
+          // Background Grid (Cached in GPU layer)
           Positioned.fill(
-            child: CustomPaint(
-              painter: GridPainter(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.1),
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: GridPainter(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.1),
+                ),
               ),
             ),
           ),

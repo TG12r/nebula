@@ -27,6 +27,8 @@ import 'package:nebula/features/downloads/presentation/logic/download_controller
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
 import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';
 import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
+import 'package:nebula/features/jam/data/jam_service.dart';
+import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 
 import 'package:nebula/core/services/notification_service.dart';
 import 'package:nebula/core/services/desktop_integration_service.dart';
@@ -182,6 +184,22 @@ class MainApp extends StatelessWidget {
         ChangeNotifierProvider<PlaylistController>(
           create: (context) =>
               PlaylistController(context.read<PlaylistRepository>()),
+        ),
+
+        // Jam
+        Provider<JamService>(
+          create: (_) => JamService(Supabase.instance.client),
+          dispose: (_, service) => service.dispose(),
+        ),
+        ChangeNotifierProvider<JamController>(
+          create: (context) {
+            final userId = Supabase.instance.client.auth.currentUser?.id ?? '';
+            return JamController(
+              context.read<JamService>(),
+              context.read<PlayerController>(),
+              userId,
+            );
+          },
         ),
       ],
       child: Consumer<SettingsController>(

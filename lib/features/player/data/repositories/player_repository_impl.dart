@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:nebula/features/player/data/datasources/nebula_audio_handler.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
@@ -21,12 +22,36 @@ class PlayerRepositoryImpl implements PlayerRepository {
   final SoundCloudRepository _scRepository;
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
+  // Full logical queue tracked for UI and Jam sessions
+  List<Track> _logicalQueue = [];
+  int _currentLogicalIndex = 0;
+  int _startLogicalOffset = 0;
+  int _bufferedLogicalIndex = 0;
+  int _queueGenerationId = 0;
+
+  final BehaviorSubject<List<Track>> _queueController =
+      BehaviorSubject<List<Track>>.seeded([]);
+
   PlayerRepositoryImpl(
     this._audioHandler,
     this._downloadRepository,
     this._settingsRepository,
     this._scRepository,
-  );
+  ) {
+    _initIndexListener();
+  }
+
+  void _initIndexListener() {
+    _audioHandler.internalPlayer.currentIndexStream.listen((playerIndex) {
+      if (playerIndex != null && _logicalQueue.isNotEmpty) {
+        final newLogical = _startLogicalOffset + playerIndex;
+        if (newLogical >= 0 && newLogical < _logicalQueue.length) {
+          _currentLogicalIndex = newLogical;
+          _ensureNextBuffered(newLogical, _queueGenerationId);
+        }
+      }
+    });
+  }
 
   @override
   Stream<Duration> get positionStream => AudioService.position;
@@ -46,9 +71,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
   });
 
   @override
-  Stream<List<Track>> get queueStream => _audioHandler.queue.map((items) {
-    return items.map((item) => _mediaItemToTrack(item)).toList();
-  });
+  Stream<List<Track>> get queueStream => _queueController.stream;
 
   @override
   Stream<AudioProcessingState> get processingStateStream => _audioHandler
@@ -57,13 +80,22 @@ class PlayerRepositoryImpl implements PlayerRepository {
       .distinct();
 
   @override
-  Future<String?> play(Track track) async {
+  Future<String?> play(Track track, {bool autoPlay = true}) async {
     try {
+      _queueGenerationId++;
+      _logicalQueue = [track];
+      _currentLogicalIndex = 0;
+      _startLogicalOffset = 0;
+      _bufferedLogicalIndex = 0;
+      _queueController.add(List.unmodifiable(_logicalQueue));
+
       final source = await _createAudioSource(track);
       if (source == null) return "Could not extract audio URL";
 
       await _audioHandler.setSourceList([source]);
-      await _audioHandler.play();
+      if (autoPlay) {
+        await _audioHandler.play();
+      }
       return null;
     } catch (e) {
       debugPrint("Error in Repo play: $e");
@@ -71,110 +103,149 @@ class PlayerRepositoryImpl implements PlayerRepository {
     }
   }
 
-  int _queueGenerationId = 0;
-
   @override
   Future<void> setQueue(List<Track> tracks, {int initialIndex = 0}) async {
-    // Increment ID to cancel any previous background loading
     _queueGenerationId++;
     final currentId = _queueGenerationId;
 
     if (tracks.isEmpty) return;
 
-    // 1. Immediate: Load ONLY the requested start track to play ASAP
-    final startTrack = tracks[initialIndex];
+    _logicalQueue = List.from(tracks);
+    _currentLogicalIndex = initialIndex.clamp(0, tracks.length - 1);
+    _startLogicalOffset = _currentLogicalIndex;
+    _bufferedLogicalIndex = _currentLogicalIndex;
+    _queueController.add(List.unmodifiable(_logicalQueue));
+
+    // 1. Immediate: Load ONLY the start track to play ASAP (minimal startup latency & CPU)
+    final startTrack = _logicalQueue[_currentLogicalIndex];
     final startSource = await _createAudioSource(startTrack);
 
+    if (_queueGenerationId != currentId) return;
+
     if (startSource != null) {
-      // Set the initial source (clearing previous queue)
       await _audioHandler.setSourceList([startSource], initialIndex: 0);
 
-      // 2. Background: Load the rest of the queue
-      // We start this immediately but don't await it, so it runs in parallel with playback start
-      _loadRemainingQueue(tracks, initialIndex, currentId);
+      // 2. Pre-buffer up to 2 tracks ahead (sliding window) to maintain gapless playback
+      _preloadUpcomingWindow(_currentLogicalIndex, currentId);
 
       await _audioHandler.play();
-    } else {
-      // Even if start source fails, try to load others? Or just abort.
-      // Usually if start fails, we might want to try next one.
-      _loadRemainingQueue(tracks, initialIndex, currentId);
     }
   }
 
-  Future<void> _loadRemainingQueue(
-    List<Track> tracks,
-    int initialIndex,
-    int generationId,
-  ) async {
-    try {
-      // We'll process the remaining tracks in batches to speed up loading
-      // without hitting rate limits too hard.
-      final remainingTracks = <Track>[];
+  /// Lazily preloads a small lookahead window (2 tracks ahead)
+  Future<void> _preloadUpcomingWindow(int baseIndex, int generationId) async {
+    for (int offset = 1; offset <= 2; offset++) {
+      final targetIndex = baseIndex + offset;
+      if (targetIndex >= _logicalQueue.length) break;
+      if (_queueGenerationId != generationId) return;
 
-      // Add tracks AFTER the initial index
-      for (int i = initialIndex + 1; i < tracks.length; i++) {
-        remainingTracks.add(tracks[i]);
+      final track = _logicalQueue[targetIndex];
+      final source = await _createAudioSource(track);
+      if (_queueGenerationId != generationId) return;
+
+      if (source != null) {
+        await _audioHandler.addAudioSourceToQueue(source);
+        _bufferedLogicalIndex = targetIndex;
       }
+    }
+  }
 
-      final int batchSize = 3;
-
-      for (var i = 0; i < remainingTracks.length; i += batchSize) {
-        if (_queueGenerationId != generationId) return;
-
-        final end = (i + batchSize < remainingTracks.length)
-            ? i + batchSize
-            : remainingTracks.length;
-        final batch = remainingTracks.sublist(i, end);
-
-        // Process batch in parallel
-        final futures = batch.map((track) async {
-          if (_queueGenerationId != generationId) return null;
-          return await _createAudioSource(track);
-        });
-
-        final sources = await Future.wait(futures);
-
-        // Add valid sources to queue
-        for (final source in sources) {
-          if (_queueGenerationId != generationId) return;
-          if (source != null) {
-            await _audioHandler.addAudioSourceToQueue(source);
-          }
-        }
+  /// Incremental buffering as the player advances
+  Future<void> _ensureNextBuffered(int currentLogical, int generationId) async {
+    final targetIndex = currentLogical + 2;
+    if (targetIndex < _logicalQueue.length && targetIndex > _bufferedLogicalIndex) {
+      final track = _logicalQueue[targetIndex];
+      final source = await _createAudioSource(track);
+      if (_queueGenerationId == generationId && source != null) {
+        await _audioHandler.addAudioSourceToQueue(source);
+        _bufferedLogicalIndex = targetIndex;
       }
-    } catch (e) {
-      debugPrint("Error in _loadRemainingQueue: $e");
     }
   }
 
   @override
   Future<void> addToQueue(Track track) async {
-    final source = await _createAudioSource(track);
-    if (source != null) {
-      await _audioHandler.addAudioSourceToQueue(source);
+    _logicalQueue.add(track);
+    _queueController.add(List.unmodifiable(_logicalQueue));
+
+    // If queue is near the end, buffer it into player
+    if (_logicalQueue.length - 1 <= _currentLogicalIndex + 2) {
+      final source = await _createAudioSource(track);
+      if (source != null) {
+        await _audioHandler.addAudioSourceToQueue(source);
+        _bufferedLogicalIndex = _logicalQueue.length - 1;
+      }
     }
   }
 
   @override
   Future<void> removeFromQueue(int index) async {
-    await _audioHandler.removeQueueItemAt(index);
+    if (index >= 0 && index < _logicalQueue.length) {
+      _logicalQueue.removeAt(index);
+      _queueController.add(List.unmodifiable(_logicalQueue));
+
+      final internalOffset = index - _startLogicalOffset;
+      if (internalOffset >= 0 && internalOffset < _audioHandler.queue.value.length) {
+        await _audioHandler.removeQueueItemAt(internalOffset);
+      }
+    }
   }
 
   @override
   Future<void> shuffleQueue() async {
-    // We delegate this complex logic to the Audio Handler which has direct access to indices
-    await _audioHandler.shuffleStringQueue();
+    if (_logicalQueue.length <= _currentLogicalIndex + 1) return;
+
+    final upcoming = _logicalQueue.sublist(_currentLogicalIndex + 1)..shuffle();
+    _logicalQueue = [
+      ..._logicalQueue.sublist(0, _currentLogicalIndex + 1),
+      ...upcoming,
+    ];
+    _queueController.add(List.unmodifiable(_logicalQueue));
+
+    // Re-seed lookahead buffer from the new shuffled order
+    _queueGenerationId++;
+    await setQueue(_logicalQueue, initialIndex: _currentLogicalIndex);
   }
 
   @override
-  Future<void> skipToNext() => _audioHandler.skipToNext();
+  Future<void> skipToNext() async {
+    final nextLogical = _currentLogicalIndex + 1;
+    if (nextLogical < _logicalQueue.length) {
+      final internalIndex = _audioHandler.internalPlayer.currentIndex;
+      final sequenceLength = _audioHandler.internalPlayer.sequence?.length ?? 0;
+      if (internalIndex != null && internalIndex + 1 < sequenceLength) {
+        await _audioHandler.skipToNext();
+      } else {
+        await setQueue(_logicalQueue, initialIndex: nextLogical);
+      }
+    } else {
+      await _audioHandler.skipToNext();
+    }
+  }
 
   @override
-  Future<void> skipToPrevious() => _audioHandler.skipToPrevious();
+  Future<void> skipToPrevious() async {
+    final prevLogical = _currentLogicalIndex - 1;
+    if (prevLogical >= 0) {
+      final internalIndex = _audioHandler.internalPlayer.currentIndex;
+      if (internalIndex != null && internalIndex > 0) {
+        await _audioHandler.skipToPrevious();
+      } else {
+        await setQueue(_logicalQueue, initialIndex: prevLogical);
+      }
+    } else {
+      await _audioHandler.skipToPrevious();
+    }
+  }
 
   @override
-  Future<void> skipToQueueItem(int index) =>
-      _audioHandler.skipToQueueItem(index);
+  Future<void> skipToQueueItem(int index) async {
+    if (index >= 0 && index < _logicalQueue.length) {
+      await setQueue(_logicalQueue, initialIndex: index);
+    } else {
+      await _audioHandler.skipToQueueItem(index);
+    }
+  }
 
   @override
   Future<void> pause() => _audioHandler.pause();
@@ -188,9 +259,9 @@ class PlayerRepositoryImpl implements PlayerRepository {
   @override
   Future<List<Track>> search(String query) async {
     if (query.trim().isEmpty) return [];
-    
+
     final preferredSource = _settingsRepository.searchSource;
-    
+
     if (preferredSource == TrackSource.soundcloud) {
       return _scRepository.searchTracks(query);
     }
@@ -217,11 +288,11 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   @override
   void dispose() {
+    _queueController.close();
     _yt.close();
     _audioHandler.stop();
   }
 
-  // Helper
   Track _mediaItemToTrack(MediaItem item) {
     return Track(
       id: item.id,
@@ -238,21 +309,18 @@ class PlayerRepositoryImpl implements PlayerRepository {
       // 1. Check Offline File
       final localPath = _downloadRepository.getLocalPath(track.id);
       if (localPath != null && File(localPath).existsSync()) {
-        // Validate the file is actual audio, not a corrupt HLS manifest
         final file = File(localPath);
         final fileSize = await file.length();
-        
+
         if (fileSize < 1024) {
-          // File is suspiciously small, likely corrupt or an HLS manifest
           debugPrint("Warning: Downloaded file too small (${fileSize}B), re-streaming: ${track.title}");
         } else {
-          // Quick check: read first bytes to detect M3U8/HLS manifest
           final firstBytes = await file.openRead(0, 10).fold<List<int>>(
             [],
             (prev, chunk) => prev..addAll(chunk),
           );
           final header = String.fromCharCodes(firstBytes).trim();
-          
+
           if (header.startsWith('#EXTM3U')) {
             debugPrint("Warning: Downloaded file is HLS manifest, re-streaming: ${track.title}");
           } else {
@@ -276,7 +344,6 @@ class PlayerRepositoryImpl implements PlayerRepository {
       if (track.source == TrackSource.soundcloud) {
         streamUrl = await _scRepository.getStreamUrl(track.id);
       } else {
-        // YouTube Stream
         final manifest = await _yt.videos.streamsClient.getManifest(track.rawId);
 
         yt_lib.AudioOnlyStreamInfo? audioStream;

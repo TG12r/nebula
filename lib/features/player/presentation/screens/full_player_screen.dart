@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
+import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
 import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
+import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
+import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
+import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -16,6 +20,8 @@ class FullPlayerScreen extends StatefulWidget {
 }
 
 class _FullPlayerScreenState extends State<FullPlayerScreen> {
+  double? _dragValue;
+
   @override
   Widget build(BuildContext context) {
     // We rely on Selectors for updates, so we don't need context.watch here
@@ -25,13 +31,15 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
       backgroundColor: AppTheme.cmfBlack,
       body: Stack(
         children: [
-          // Background Grid (Static)
+          // Background Grid (Static - Cached into GPU layer)
           Positioned.fill(
-            child: CustomPaint(
-              painter: GridPainter(
-                color: Colors.white.withOpacity(0.15),
-                step: 24.0,
-                radius: 1.5,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: GridPainter(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  step: 24.0,
+                  radius: 1.5,
+                ),
               ),
             ),
           ),
@@ -63,7 +71,57 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                           letterSpacing: 2.0,
                         ),
                       ),
-                      const SizedBox(width: 48),
+                      Consumer<JamController>(
+                        builder: (context, jam, _) {
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  Icons.people_outline,
+                                  color: jam.isInJam
+                                      ? AppTheme.nebulaPurple
+                                      : Colors.white,
+                                  size: 24,
+                                ),
+                                onPressed: () {
+                                  if (jam.isInJam) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const JamScreen(),
+                                      ),
+                                    );
+                                  } else {
+                                    JamBottomSheet.show(context);
+                                  }
+                                },
+                              ),
+                              if (jam.isInJam && jam.participants.isNotEmpty)
+                                Positioned(
+                                  right: 4,
+                                  top: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: AppTheme.nebulaPurple,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      '${jam.participants.length}',
+                                      style: const TextStyle(
+                                        fontFamily: 'Courier New',
+                                        color: Colors.white,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -187,17 +245,28 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               ),
                             ),
                             child: Slider(
-                              value: position.inSeconds.toDouble().clamp(
+                              value: (_dragValue ?? position.inSeconds.toDouble())
+                                  .clamp(
                                 0.0,
-                                duration.inSeconds.toDouble(),
+                                duration.inSeconds.toDouble() > 0
+                                    ? duration.inSeconds.toDouble()
+                                    : 1.0,
                               ),
                               max: duration.inSeconds.toDouble() > 0
                                   ? duration.inSeconds.toDouble()
                                   : 1.0,
                               onChanged: (value) {
-                                context.read<PlayerController>().seek(
+                                setState(() {
+                                  _dragValue = value;
+                                });
+                              },
+                              onChangeEnd: (value) {
+                                context.read<JamController>().seek(
                                   Duration(seconds: value.toInt()),
                                 );
+                                setState(() {
+                                  _dragValue = null;
+                                });
                               },
                             ),
                           ),
@@ -209,7 +278,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  _formatDuration(position),
+                                  _formatDuration(
+                                    _dragValue != null
+                                        ? Duration(seconds: _dragValue!.toInt())
+                                        : position,
+                                  ),
                                   style: const TextStyle(
                                     fontFamily: 'Courier New',
                                     color: Colors.white54,
@@ -245,8 +318,9 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         final track = context
                             .read<PlayerController>()
                             .currentTrack;
-                        if (track == null)
+                        if (track == null) {
                           return const SizedBox(width: 48); // Placeholder
+                        }
 
                         final isDownloaded = downloader.isDownloaded(track.id);
                         final isDownloading = downloader.isDownloading(
@@ -291,36 +365,38 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                       },
                     ),
 
-                    // Like Button
-                    Consumer2<PlayerController, FavoritesController>(
-                      builder: (context, player, favorites, _) {
-                        final track = player.currentTrack;
-                        final isLiked =
-                            track != null && favorites.isFavorite(track.id);
-                        return IconButton(
-                          icon: Text(
-                            '<3',
-                            style: TextStyle(
-                              fontFamily: 'Courier New',
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -1.0,
-                              fontSize: 22,
-                              color: isLiked
-                                  ? AppTheme.nebulaPurple
-                                  : Colors.white,
-                            ),
-                          ),
-                          onPressed: () {
-                            if (track != null) {
-                              if (!isLiked) {
-                                // Will be added to favorites, show modal
-                                favorites.toggleFavorite(track);
-                                _showAddToPlaylistModal(context, track);
-                              } else {
-                                // Will be removed
-                                favorites.toggleFavorite(track);
-                              }
-                            }
+                    // Like Button (Isolated to track changes only)
+                    Selector<PlayerController, Track?>(
+                      selector: (_, p) => p.currentTrack,
+                      builder: (context, track, _) {
+                        return Consumer<FavoritesController>(
+                          builder: (context, favorites, _) {
+                            final isLiked =
+                                track != null && favorites.isFavorite(track.id);
+                            return IconButton(
+                              icon: Text(
+                                '<3',
+                                style: TextStyle(
+                                  fontFamily: 'Courier New',
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -1.0,
+                                  fontSize: 22,
+                                  color: isLiked
+                                      ? AppTheme.nebulaPurple
+                                      : Colors.white,
+                                ),
+                              ),
+                              onPressed: () {
+                                if (track != null) {
+                                  if (!isLiked) {
+                                    favorites.toggleFavorite(track);
+                                    _showAddToPlaylistModal(context, track);
+                                  } else {
+                                    favorites.toggleFavorite(track);
+                                  }
+                                }
+                              },
+                            );
                           },
                         );
                       },
@@ -333,7 +409,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         size: 36,
                       ),
                       onPressed: () =>
-                          context.read<PlayerController>().skipToPrevious(),
+                          context.read<JamController>().skipToPrevious(),
                     ),
                     Container(
                       width: 80,
@@ -353,7 +429,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               size: 40,
                             ),
                             onPressed: () =>
-                                context.read<PlayerController>().togglePlay(),
+                                context.read<JamController>().togglePlay(),
                           );
                         },
                       ),
@@ -365,7 +441,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         size: 36,
                       ),
                       onPressed: () =>
-                          context.read<PlayerController>().skipToNext(),
+                          context.read<JamController>().skipToNext(),
                     ),
 
                     // Balance Spacer
@@ -398,10 +474,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                     ),
                   ],
                 ),
-                child: Consumer<PlayerController>(
-                  builder: (context, player, _) {
-                    final queue = player.queue;
-
+                child: Selector<PlayerController, (List<Track>, String?)>(
+                  selector: (_, p) => (p.queue, p.currentTrack?.id),
+                  builder: (context, queueData, _) {
+                    final queue = queueData.$1;
+                    final currentTrackId = queueData.$2;
                     return CustomScrollView(
                       controller: scrollController,
                       slivers: [
@@ -474,8 +551,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               index,
                             ) {
                               final track = queue[index];
-                              final isCurrent =
-                                  track.id == player.currentTrack?.id;
+                              final isCurrent = track.id == currentTrackId;
 
                               return ListTile(
                                 dense: true,
@@ -518,8 +594,8 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                   ),
                                 ),
                                 onTap: () {
-                                  if (track.id != player.currentTrack?.id) {
-                                    player.skipToQueueItem(index);
+                                  if (!isCurrent) {
+                                    context.read<PlayerController>().skipToQueueItem(index);
                                   }
                                 },
                                 trailing: IconButton(
@@ -529,7 +605,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                     size: 20,
                                   ),
                                   onPressed: () =>
-                                      player.removeFromQueue(index),
+                                      context.read<PlayerController>().removeFromQueue(index),
                                 ),
                               );
                             }, childCount: queue.length),

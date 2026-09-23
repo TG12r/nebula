@@ -52,7 +52,7 @@ class LibraryScreen extends StatelessWidget {
             child: Consumer<PlaylistController>(
               builder: (context, playlistCtrl, child) {
                 return ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  padding: const EdgeInsets.fromLTRB(24.0, 0, 24.0, 96.0),
                   children: [
                     // Favorites Card (Always First)
                     _buildCollectionCard(

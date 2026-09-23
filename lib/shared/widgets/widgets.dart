@@ -4,3 +4,4 @@ export 'nebula_input.dart';
 export 'nebula_list_tile.dart';
 export 'nebula_marquee.dart';
 export 'nebula_image.dart';
+export 'nebula_track_tile.dart';

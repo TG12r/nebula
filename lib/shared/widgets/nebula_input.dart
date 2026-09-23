@@ -10,6 +10,7 @@ class NebulaInput extends StatelessWidget {
   final Widget? suffixIcon;
 
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChanged;
 
   const NebulaInput({
     super.key,
@@ -21,6 +22,7 @@ class NebulaInput extends StatelessWidget {
     this.technicalSpec,
     this.suffixIcon,
     this.onSubmitted,
+    this.onChanged,
   });
 
   @override
@@ -44,7 +46,7 @@ class NebulaInput extends StatelessWidget {
                   fontSize: 10,
                   color: Theme.of(
                     context,
-                  ).colorScheme.onSurface.withOpacity(0.5),
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
           ],
@@ -59,6 +61,7 @@ class NebulaInput extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
           onFieldSubmitted: onSubmitted,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hintText,
             suffixIcon: suffixIcon,
