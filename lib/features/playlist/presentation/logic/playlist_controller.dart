@@ -120,6 +120,54 @@ class PlaylistController extends ChangeNotifier {
     }
   }
 
+  Future<void> addTracksToPlaylist(String playlistId, List<Track> tracks) async {
+    if (tracks.isEmpty) return;
+
+    // Optimistic update if currently viewing this playlist
+    if (_currentPlaylistId == playlistId) {
+      _currentPlaylistTracks.insertAll(0, tracks);
+      notifyListeners();
+    }
+
+    // Optimistic update for playlist list count
+    final index = _playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      final p = _playlists[index];
+      _playlists[index] = Playlist(
+        id: p.id,
+        name: p.name,
+        userId: p.userId,
+        trackCount: p.trackCount + tracks.length,
+      );
+      notifyListeners();
+    }
+
+    try {
+      await _repository.addTracksToPlaylist(playlistId, tracks);
+    } catch (e) {
+      // Revert details
+      if (_currentPlaylistId == playlistId) {
+        for (final t in tracks) {
+          _currentPlaylistTracks.remove(t);
+        }
+        notifyListeners();
+      }
+
+      // Revert list count
+      if (index != -1) {
+        final p = _playlists[index];
+        _playlists[index] = Playlist(
+          id: p.id,
+          name: p.name,
+          userId: p.userId,
+          trackCount: p.trackCount - tracks.length,
+        );
+        notifyListeners();
+      }
+      rethrow;
+    }
+  }
+
   Future<List<String>> getPlaylistsContainingTrack(String trackId) async {
     return await _repository.getPlaylistsContainingTrack(trackId);
   }

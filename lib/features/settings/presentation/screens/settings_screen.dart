@@ -149,20 +149,69 @@ class SettingsScreen extends StatelessWidget {
                           // --- PLAYBACK ---
                           _buildSectionHeader(context, 'PLAYBACK'),
                           NebulaListTile(
-                            title: 'Stream Quality',
-                            subtitle: settings.highQuality
-                                ? 'High Audio Quality'
-                                : 'Standard Quality',
+                            title: 'Data Saver Mode',
+                            subtitle: settings.dataSaver
+                                ? 'Active: Low bitrate & zero lookahead'
+                                : 'Disabled (Optimal audio quality)',
                             trailing: Switch(
-                              value: settings.highQuality,
-                              onChanged: (_) => settings.toggleHighQuality(),
+                              value: settings.dataSaver,
+                              onChanged: (_) => settings.toggleDataSaver(),
                               activeColor: AppTheme.nebulaPurple,
                               inactiveTrackColor: Colors.white10,
                             ),
                           ),
                           NebulaListTile(
+                            title: 'Stream Quality',
+                            subtitle: settings.dataSaver
+                                ? 'Locked to Low (Data Saver)'
+                                : (settings.highQuality
+                                    ? 'High Audio Quality'
+                                    : 'Standard Quality'),
+                            trailing: Switch(
+                              value: settings.highQuality,
+                              onChanged: settings.dataSaver
+                                  ? null
+                                  : (_) => settings.toggleHighQuality(),
+                              activeColor: AppTheme.nebulaPurple,
+                              inactiveTrackColor: Colors.white10,
+                            ),
+                          ),
+                          NebulaListTile(
+                            title: 'Lookahead Preload',
+                            subtitle: settings.dataSaver
+                                ? 'Disabled (Data Saver active)'
+                                : 'Pre-buffer upcoming queue tracks',
+                            trailing: DropdownButton<int>(
+                              value: settings.lookaheadTracks,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: AppTheme.nebulaPurple,
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 0,
+                                  child: Text('OFF', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 1,
+                                  child: Text('1 TRACK', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 2,
+                                  child: Text('2 TRACKS', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                              ],
+                              onChanged: settings.dataSaver
+                                  ? null
+                                  : (val) {
+                                      if (val != null) settings.setLookaheadTracks(val);
+                                    },
+                            ),
+                          ),
+                          NebulaListTile(
                             title: 'Gapless Playback',
-                            subtitle: 'Preload next track',
+                            subtitle: 'Seamless track transitions',
                             trailing: Switch(
                               value: settings.gapless,
                               onChanged: (_) => settings.toggleGapless(),
@@ -170,6 +219,37 @@ class SettingsScreen extends StatelessWidget {
                               inactiveTrackColor: Colors.white10,
                             ),
                           ),
+                          if (Platform.isAndroid)
+                            NebulaListTile(
+                              title: 'Background Playback Protection',
+                              subtitle: settings.isBatteryOptimizationIgnored
+                                  ? 'Unrestricted (Protected from Android background kill)'
+                                  : 'Tap to grant "Sin restricciones" to prevent 20m shutdown',
+                              trailing: Icon(
+                                settings.isBatteryOptimizationIgnored
+                                    ? Icons.check_circle_rounded
+                                    : Icons.battery_alert_rounded,
+                                color: settings.isBatteryOptimizationIgnored
+                                    ? Colors.greenAccent
+                                    : Colors.amberAccent,
+                                size: 22,
+                              ),
+                              onTap: () async {
+                                final granted = await settings.requestBatteryOptimizationExemption();
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      granted
+                                          ? 'Battery optimization disabled: Nebula will run continuously.'
+                                          : 'Please enable "Sin restricciones" in App Settings > Battery.',
+                                      style: const TextStyle(fontFamily: 'Courier New'),
+                                    ),
+                                    backgroundColor: granted ? AppTheme.nebulaPurple : Colors.redAccent,
+                                  ),
+                                );
+                              },
+                            ),
 
                           const SizedBox(height: 32),
 
@@ -251,6 +331,46 @@ class SettingsScreen extends StatelessWidget {
                               ),
                               onTap: () => settings.pickAndMigrateFolder(),
                             ),
+
+                          NebulaListTile(
+                            title: 'Audio Cache Quota',
+                            subtitle: '${settings.audioCacheLimitMb} MB disk storage',
+                            leading: Icon(
+                              Icons.storage,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                            trailing: DropdownButton<int>(
+                              value: settings.audioCacheLimitMb,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: AppTheme.nebulaPurple,
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 100,
+                                  child: Text('100 MB', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 250,
+                                  child: Text('250 MB', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 500,
+                                  child: Text('500 MB', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 1000,
+                                  child: Text('1.0 GB', style: TextStyle(fontFamily: 'Courier New', fontSize: 11)),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) settings.setAudioCacheLimitMb(val);
+                              },
+                            ),
+                          ),
 
                           NebulaListTile(
                             title: 'Clear Cache',

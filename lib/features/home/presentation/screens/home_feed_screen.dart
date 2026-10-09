@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 import 'package:nebula/features/player/presentation/screens/full_player_screen.dart';
 import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
+import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
+import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 
@@ -39,21 +42,93 @@ class HomeFeedScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                InkWell(
-                  onTap: () => Scaffold.of(context).openEndDrawer(),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.2),
+                Row(
+                  children: [
+                    // Jam Button with status & count
+                    Consumer<JamController>(
+                      builder: (context, jam, _) {
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            InkWell(
+                              onTap: () {
+                                if (jam.isInJam) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const JamScreen(),
+                                    ),
+                                  );
+                                } else {
+                                  JamBottomSheet.show(context);
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: jam.isInJam
+                                      ? AppTheme.nebulaPurple.withValues(alpha: 0.15)
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: jam.isInJam
+                                        ? AppTheme.nebulaPurple
+                                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Icon(
+                                  jam.isInJam ? Icons.people : Icons.people_outline,
+                                  color: jam.isInJam
+                                      ? AppTheme.nebulaPurple
+                                      : Theme.of(context).colorScheme.onSurface,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                            if (jam.isInJam && jam.participants.isNotEmpty)
+                              Positioned(
+                                right: -4,
+                                top: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.nebulaPurple,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Text(
+                                    '${jam.participants.length}',
+                                    style: const TextStyle(
+                                      fontFamily: 'Courier New',
+                                      color: Colors.white,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => Scaffold.of(context).openEndDrawer(),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.2),
+                          ),
+                        ),
+                        child: const Icon(Icons.menu),
                       ),
                     ),
-                    child: const Icon(Icons.menu),
-                  ),
+                  ],
                 ),
               ],
             ),

@@ -96,6 +96,7 @@ class JamService {
   final _actionController = StreamController<JamAction>.broadcast();
   final _participantsController = StreamController<List<JamParticipant>>.broadcast();
   final _connectionReadyController = StreamController<String>.broadcast();
+  final _reconnectedController = StreamController<void>.broadcast();
 
   /// Stream of incoming actions from other participants.
   Stream<JamAction> get onAction => _actionController.stream;
@@ -106,13 +107,26 @@ class JamService {
   /// Stream emitted when a specific participant is ready to receive sync actions.
   Stream<String> get onConnectionReady => _connectionReadyController.stream;
 
+  /// Stream emitted when the channel reconnects after a temporary disconnect or background sleep.
+  Stream<void> get onReconnected => _reconnectedController.stream;
+
   /// The current Jam code, or null if not in a Jam.
   String? get currentCode => _currentCode;
 
   /// Whether we are currently in a Jam session.
   bool get isInJam => _channel != null && _currentCode != null;
 
+  bool _isSubscribed = false;
+  bool _wasEverSubscribed = false;
+
+  /// Whether the realtime channel is connected and subscribed.
+  bool get isSubscribed => _channel != null && _isSubscribed;
+
   JamService(this._supabase) {
+    _refreshUserId();
+  }
+
+  void _refreshUserId() {
     final authId = _supabase.auth.currentUser?.id ?? 'anon';
     final deviceSuffix = Random.secure().nextInt(9999999).toString();
     myUserId = '${authId}_$deviceSuffix';
@@ -121,6 +135,7 @@ class JamService {
   /// Creates a new Jam session con a random 6-character code.
   Future<String> createJam() async {
     isHost = true;
+    _refreshUserIdIfNeeded();
     final code = _generateCode();
     await _subscribeToChannel(code);
     return code;
@@ -129,6 +144,7 @@ class JamService {
   /// Joins an existing Jam session by its code.
   Future<void> joinJam(String code) async {
     isHost = false;
+    _refreshUserIdIfNeeded();
     final normalizedCode = code.trim().toUpperCase();
     if (normalizedCode.length != 6) {
       throw ArgumentError('JAM code must be 6 characters');
@@ -136,8 +152,18 @@ class JamService {
     await _subscribeToChannel(normalizedCode);
   }
 
+  void _refreshUserIdIfNeeded() {
+    final currentAuth = _supabase.auth.currentUser?.id;
+    if (currentAuth != null && myUserId.startsWith('anon_')) {
+      final deviceSuffix = Random.secure().nextInt(9999999).toString();
+      myUserId = '${currentAuth}_$deviceSuffix';
+    }
+  }
+
   /// Leaves the current Jam session and cleans up resources.
   Future<void> leaveJam() async {
+    _isSubscribed = false;
+    _wasEverSubscribed = false;
     if (_channel != null) {
       await _supabase.removeChannel(_channel!);
       _channel = null;
@@ -161,30 +187,102 @@ class JamService {
     );
   }
 
-  /// Broadcasts an action to all participants via Supabase Broadcast.
-  Future<void> broadcastAction(JamAction action) async {
-    if (_channel == null) return;
-    
-    await _channel!.sendBroadcastMessage(
-      event: 'jam_action',
-      payload: {
-        'target_id': 'all',
-        'action': action.toPayload(),
-      },
-    );
+  /// Waits until the channel is in subscribed state or timeout expires.
+  Future<bool> _ensureSubscribed({Duration timeout = const Duration(seconds: 4)}) async {
+    if (_channel == null) return false;
+    if (_isSubscribed) return true;
+
+    final start = DateTime.now();
+    while (!_isSubscribed && _channel != null) {
+      if (DateTime.now().difference(start) > timeout) {
+        debugPrint('JAM_SERVICE: Timed out waiting for channel to be subscribed.');
+        return false;
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return _isSubscribed;
   }
 
-  /// Sends an action to a specific participant via Supabase Broadcast.
-  Future<void> sendActionTo(String targetId, JamAction action) async {
-    if (_channel == null) return;
+  /// Broadcasts an action to all participants via Supabase Broadcast with automatic retry.
+  Future<bool> broadcastAction(JamAction action, {int maxRetries = 3}) async {
+    if (_channel == null) return false;
 
-    await _channel!.sendBroadcastMessage(
-      event: 'jam_action',
-      payload: {
-        'target_id': targetId,
-        'action': action.toPayload(),
-      },
-    );
+    final ready = await _ensureSubscribed();
+    if (!ready || _channel == null) {
+      debugPrint('JAM_SERVICE: broadcastAction (${action.type.name}) skipped: channel not subscribed.');
+      return false;
+    }
+
+    int attempt = 0;
+    while (attempt < maxRetries) {
+      attempt++;
+      try {
+        final status = await _channel!.sendBroadcastMessage(
+          event: 'jam_action',
+          payload: {
+            'target_id': 'all',
+            'action': action.toPayload(),
+          },
+        );
+
+        if (status == ChannelResponse.ok) {
+          debugPrint('JAM_SERVICE: broadcastAction ${action.type.name} delivered successfully.');
+          return true;
+        }
+
+        debugPrint('JAM_SERVICE: broadcastAction ${action.type.name} returned $status (attempt $attempt/$maxRetries)');
+      } catch (e) {
+        debugPrint('JAM_SERVICE: Error in broadcastAction attempt $attempt: $e');
+      }
+
+      if (attempt < maxRetries) {
+        await Future.delayed(Duration(milliseconds: 150 * pow(2, attempt - 1).toInt()));
+      }
+    }
+
+    debugPrint('JAM_SERVICE: Failed to broadcast action ${action.type.name} after $maxRetries attempts.');
+    return false;
+  }
+
+  /// Sends an action to a specific participant via Supabase Broadcast with automatic retry.
+  Future<bool> sendActionTo(String targetId, JamAction action, {int maxRetries = 3}) async {
+    if (_channel == null) return false;
+
+    final ready = await _ensureSubscribed();
+    if (!ready || _channel == null) {
+      debugPrint('JAM_SERVICE: sendActionTo ($targetId) skipped: channel not subscribed.');
+      return false;
+    }
+
+    int attempt = 0;
+    while (attempt < maxRetries) {
+      attempt++;
+      try {
+        final status = await _channel!.sendBroadcastMessage(
+          event: 'jam_action',
+          payload: {
+            'target_id': targetId,
+            'action': action.toPayload(),
+          },
+        );
+
+        if (status == ChannelResponse.ok) {
+          debugPrint('JAM_SERVICE: sendActionTo ($targetId) ${action.type.name} delivered successfully.');
+          return true;
+        }
+
+        debugPrint('JAM_SERVICE: sendActionTo ($targetId) ${action.type.name} returned $status (attempt $attempt/$maxRetries)');
+      } catch (e) {
+        debugPrint('JAM_SERVICE: Error in sendActionTo attempt $attempt: $e');
+      }
+
+      if (attempt < maxRetries) {
+        await Future.delayed(Duration(milliseconds: 150 * pow(2, attempt - 1).toInt()));
+      }
+    }
+
+    debugPrint('JAM_SERVICE: Failed sendActionTo ($targetId) ${action.type.name} after $maxRetries attempts.');
+    return false;
   }
 
   /// Disposes all resources. Call when the service is no longer needed.
@@ -193,6 +291,7 @@ class JamService {
     _actionController.close();
     _participantsController.close();
     _connectionReadyController.close();
+    _reconnectedController.close();
   }
 
   // --- Private ---
@@ -255,22 +354,68 @@ class JamService {
     _channel!.onPresenceJoin((_) => _updateParticipants());
     _channel!.onPresenceLeave((_) => _updateParticipants());
 
+    final completer = Completer<void>();
+
     _channel!.subscribe((status, [error]) async {
-      if (status == RealtimeSubscribeStatus.subscribed) {
-        await _channel!.track({
-          'user_id': myUserId,
-          'username': username,
-          'is_host': isHost,
-          'joined_at': DateTime.now().millisecondsSinceEpoch,
-        });
+      debugPrint('JAM_SERVICE: Channel subscription status: $status, error: $error');
+      switch (status) {
+        case RealtimeSubscribeStatus.subscribed:
+          final isReconnection = !_isSubscribed && _wasEverSubscribed;
+          _isSubscribed = true;
+          _wasEverSubscribed = true;
+
+          try {
+            await _channel!.track({
+              'user_id': myUserId,
+              'username': username,
+              'is_host': isHost,
+              'joined_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          } catch (e) {
+            debugPrint('JAM_SERVICE: Error tracking presence: $e');
+          }
+
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
+
+          if (isReconnection) {
+            debugPrint('JAM_SERVICE: Channel reconnected! Emitting onReconnected event.');
+            _reconnectedController.add(null);
+          }
+          break;
+
+        case RealtimeSubscribeStatus.closed:
+        case RealtimeSubscribeStatus.channelError:
+        case RealtimeSubscribeStatus.timedOut:
+          _isSubscribed = false;
+          if (!completer.isCompleted) {
+            completer.completeError(
+              error ?? Exception('Failed to subscribe to channel: $status'),
+            );
+          }
+          break;
       }
     });
+
+    try {
+      await completer.future.timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          throw TimeoutException('Timed out connecting to Jam channel $code');
+        },
+      );
+    } catch (e) {
+      debugPrint('JAM_SERVICE: Connection failed or timed out: $e');
+      await leaveJam();
+      rethrow;
+    }
   }
 
   /// Updates the presence state when host status changes.
   Future<void> updateHostPresence(bool newIsHost) async {
     isHost = newIsHost;
-    if (_channel != null) {
+    if (_channel != null && _isSubscribed) {
       final user = _supabase.auth.currentUser;
       final metadata = user?.userMetadata;
       final username = metadata?['full_name'] as String? ??

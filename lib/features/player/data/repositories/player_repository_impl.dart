@@ -13,6 +13,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
 import 'package:nebula/core/enums/track_source.dart';
+import 'package:nebula/core/services/innertube_search_service.dart';
 import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
 
 class PlayerRepositoryImpl implements PlayerRepository {
@@ -21,6 +22,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
   final SettingsRepository _settingsRepository;
   final SoundCloudRepository _scRepository;
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
+  final InnerTubeSearchService _innerTube = InnerTubeSearchService();
 
   // Full logical queue tracked for UI and Jam sessions
   List<Track> _logicalQueue = [];
@@ -28,6 +30,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
   int _startLogicalOffset = 0;
   int _bufferedLogicalIndex = 0;
   int _queueGenerationId = 0;
+  bool _isSettingQueue = false;
 
   final BehaviorSubject<List<Track>> _queueController =
       BehaviorSubject<List<Track>>.seeded([]);
@@ -43,6 +46,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   void _initIndexListener() {
     _audioHandler.internalPlayer.currentIndexStream.listen((playerIndex) {
+      if (_isSettingQueue) return;
       if (playerIndex != null && _logicalQueue.isNotEmpty) {
         final newLogical = _startLogicalOffset + playerIndex;
         if (newLogical >= 0 && newLogical < _logicalQueue.length) {
@@ -83,6 +87,8 @@ class PlayerRepositoryImpl implements PlayerRepository {
   Future<String?> play(Track track, {bool autoPlay = true}) async {
     try {
       _queueGenerationId++;
+      final currentId = _queueGenerationId;
+      _isSettingQueue = true;
       _logicalQueue = [track];
       _currentLogicalIndex = 0;
       _startLogicalOffset = 0;
@@ -90,6 +96,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
       _queueController.add(List.unmodifiable(_logicalQueue));
 
       final source = await _createAudioSource(track);
+      if (_queueGenerationId != currentId) return null;
       if (source == null) return "Could not extract audio URL";
 
       await _audioHandler.setSourceList([source]);
@@ -100,6 +107,8 @@ class PlayerRepositoryImpl implements PlayerRepository {
     } catch (e) {
       debugPrint("Error in Repo play: $e");
       return "Error: $e";
+    } finally {
+      _isSettingQueue = false;
     }
   }
 
@@ -110,31 +119,55 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
     if (tracks.isEmpty) return;
 
+    _isSettingQueue = true;
     _logicalQueue = List.from(tracks);
     _currentLogicalIndex = initialIndex.clamp(0, tracks.length - 1);
     _startLogicalOffset = _currentLogicalIndex;
     _bufferedLogicalIndex = _currentLogicalIndex;
     _queueController.add(List.unmodifiable(_logicalQueue));
 
-    // 1. Immediate: Load ONLY the start track to play ASAP (minimal startup latency & CPU)
-    final startTrack = _logicalQueue[_currentLogicalIndex];
-    final startSource = await _createAudioSource(startTrack);
+    try {
+      // 1. Immediate: Load ONLY the start track to play ASAP (minimal startup latency & CPU)
+      Track startTrack = _logicalQueue[_currentLogicalIndex];
+      AudioSource? startSource = await _createAudioSource(startTrack);
 
-    if (_queueGenerationId != currentId) return;
+      // If start track is unavailable/blocked (e.g. video deleted/private), advance to next playable track
+      while (startSource == null && _currentLogicalIndex < _logicalQueue.length - 1) {
+        if (_queueGenerationId != currentId) return;
+        _currentLogicalIndex++;
+        _startLogicalOffset = _currentLogicalIndex;
+        _bufferedLogicalIndex = _currentLogicalIndex;
+        startTrack = _logicalQueue[_currentLogicalIndex];
+        debugPrint('Track unplayable, advancing to next in queue: ${startTrack.title}');
+        startSource = await _createAudioSource(startTrack);
+      }
 
-    if (startSource != null) {
-      await _audioHandler.setSourceList([startSource], initialIndex: 0);
+      if (_queueGenerationId != currentId) return;
 
-      // 2. Pre-buffer up to 2 tracks ahead (sliding window) to maintain gapless playback
-      _preloadUpcomingWindow(_currentLogicalIndex, currentId);
+      if (startSource != null) {
+        _startLogicalOffset = _currentLogicalIndex;
+        await _audioHandler.setSourceList([startSource], initialIndex: 0);
 
-      await _audioHandler.play();
+        // 2. Pre-buffer up to 2 tracks ahead (sliding window) to maintain gapless playback
+        _preloadUpcomingWindow(_currentLogicalIndex, currentId);
+
+        await _audioHandler.play();
+      }
+    } finally {
+      if (_queueGenerationId == currentId) {
+        _isSettingQueue = false;
+      }
     }
   }
 
-  /// Lazily preloads a small lookahead window (2 tracks ahead)
+  /// Lazily preloads a small lookahead window based on user settings
   Future<void> _preloadUpcomingWindow(int baseIndex, int generationId) async {
-    for (int offset = 1; offset <= 2; offset++) {
+    if (_settingsRepository.dataSaver) return;
+
+    final maxLookahead = _settingsRepository.lookaheadTracks;
+    if (maxLookahead <= 0) return;
+
+    for (int offset = 1; offset <= maxLookahead; offset++) {
       final targetIndex = baseIndex + offset;
       if (targetIndex >= _logicalQueue.length) break;
       if (_queueGenerationId != generationId) return;
@@ -152,7 +185,12 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   /// Incremental buffering as the player advances
   Future<void> _ensureNextBuffered(int currentLogical, int generationId) async {
-    final targetIndex = currentLogical + 2;
+    if (_settingsRepository.dataSaver) return;
+
+    final maxLookahead = _settingsRepository.lookaheadTracks;
+    if (maxLookahead <= 0) return;
+
+    final targetIndex = currentLogical + maxLookahead;
     if (targetIndex < _logicalQueue.length && targetIndex > _bufferedLogicalIndex) {
       final track = _logicalQueue[targetIndex];
       final source = await _createAudioSource(track);
@@ -266,6 +304,28 @@ class PlayerRepositoryImpl implements PlayerRepository {
       return _scRepository.searchTracks(query);
     }
 
+    // 1. Primary: Fast, non-redirecting InnerTube JSON API
+    try {
+      final innerTubeResults = await _innerTube.search(query);
+      if (innerTubeResults.isNotEmpty) {
+        return innerTubeResults
+            .map(
+              (v) => Track(
+                id: v.id,
+                title: v.title,
+                artist: v.artist,
+                thumbnailUrl: v.thumbnailUrl,
+                duration: v.duration,
+                source: TrackSource.youtube,
+              ),
+            )
+            .toList();
+      }
+    } catch (e) {
+      debugPrint("InnerTube search error: $e");
+    }
+
+    // 2. Secondary: Fallback to YoutubeExplode
     try {
       final results = await _yt.search.search(query);
       return results
@@ -347,9 +407,16 @@ class PlayerRepositoryImpl implements PlayerRepository {
         final manifest = await _yt.videos.streamsClient.getManifest(track.rawId);
 
         yt_lib.AudioOnlyStreamInfo? audioStream;
+        final isDataSaver = _settingsRepository.dataSaver;
         final highQuality = _settingsRepository.highAudioQuality;
 
-        if (highQuality) {
+        if (isDataSaver) {
+          // Data Saver mode: pick lowest viable bitrate (~50-70kbps) to conserve cellular data
+          final sorted = manifest.audioOnly.sortByBitrate();
+          if (sorted.isNotEmpty) {
+            audioStream = sorted.first;
+          }
+        } else if (highQuality) {
           audioStream = manifest.audioOnly.withHighestBitrate();
         } else {
           final sorted = manifest.audioOnly.sortByBitrate();
@@ -363,16 +430,23 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
       if (streamUrl == null) return null;
 
-      return AudioSource.uri(
-        Uri.parse(streamUrl),
-        tag: MediaItem(
-          id: track.storageId,
-          title: track.title,
-          artist: track.artist,
-          artUri: Uri.parse(track.thumbnailUrl),
-          duration: track.duration,
-        ),
+      final uri = Uri.parse(streamUrl);
+      final mediaTag = MediaItem(
+        id: track.storageId,
+        title: track.title,
+        artist: track.artist,
+        artUri: Uri.parse(track.thumbnailUrl),
+        duration: track.duration,
       );
+
+      // LockCachingAudioSource uses a platform channel proxy that in just_audio_windows
+      // sends data on a background thread, triggering a Flutter Windows thread violation.
+      // Use LockCachingAudioSource on Android/iOS (mobile) and AudioSource.uri on desktop.
+      if (Platform.isAndroid || Platform.isIOS) {
+        return LockCachingAudioSource(uri, tag: mediaTag);
+      } else {
+        return AudioSource.uri(uri, tag: mediaTag);
+      }
     } catch (e) {
       debugPrint("Error extracting audio for ${track.title} (${track.source}): $e");
       return null;

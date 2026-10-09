@@ -11,6 +11,7 @@ import 'package:nebula/features/playlist/presentation/logic/playlist_controller.
 import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
 import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
+import 'package:nebula/features/player/presentation/widgets/lyrics_view.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -21,6 +22,7 @@ class FullPlayerScreen extends StatefulWidget {
 
 class _FullPlayerScreenState extends State<FullPlayerScreen> {
   double? _dragValue;
+  bool _showLyrics = false;
 
   @override
   Widget build(BuildContext context) {
@@ -138,44 +140,62 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                           maxWidth: 350,
                           maxHeight: 350,
                         ),
-                        child: Hero(
-                          tag: 'album_art',
-                          child: AspectRatio(
-                            aspectRatio: 1.0,
-                            child: Container(
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: AppTheme.cmfDarkGrey,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppTheme.nebulaPurple.withOpacity(
-                                      0.2,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _showLyrics
+                              ? Selector<PlayerController, Track?>(
+                                  selector: (_, p) => p.currentTrack,
+                                  builder: (context, track, _) {
+                                    if (track == null) return const SizedBox();
+                                    return LyricsView(
+                                      key: ValueKey('lyrics_${track.id}'),
+                                      track: track,
+                                      onClose: () => setState(() => _showLyrics = false),
+                                    );
+                                  },
+                                )
+                              : GestureDetector(
+                                  onTap: () => setState(() => _showLyrics = true),
+                                  child: Hero(
+                                    tag: 'album_art',
+                                    child: AspectRatio(
+                                      aspectRatio: 1.0,
+                                      child: Container(
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.cmfDarkGrey,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: AppTheme.nebulaPurple.withValues(
+                                                alpha: 0.2,
+                                              ),
+                                              blurRadius: 20,
+                                              offset: const Offset(0, 10),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Selector<PlayerController, String?>(
+                                          selector: (_, p) => p.currentThumbnail,
+                                          builder: (_, thumbnail, __) {
+                                            return thumbnail != null
+                                                ? NebulaImage(
+                                                    url: thumbnail,
+                                                    fit: BoxFit.cover,
+                                                    isThumbnail: false, // High quality
+                                                  )
+                                                : const Center(
+                                                    child: Icon(
+                                                      FontAwesomeIcons.music,
+                                                      color: Colors.white,
+                                                      size: 40,
+                                                    ),
+                                                  );
+                                          },
+                                        ),
+                                      ),
                                     ),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
                                   ),
-                                ],
-                              ),
-                              child: Selector<PlayerController, String?>(
-                                selector: (_, p) => p.currentThumbnail,
-                                builder: (_, thumbnail, __) {
-                                  return thumbnail != null
-                                      ? NebulaImage(
-                                          url: thumbnail,
-                                          fit: BoxFit.cover,
-                                          isThumbnail: false, // High quality
-                                        )
-                                      : const Center(
-                                          child: Icon(
-                                            FontAwesomeIcons.music,
-                                            color: Colors.white,
-                                            size: 40,
-                                          ),
-                                        );
-                                },
-                              ),
-                            ),
-                          ),
+                                ),
                         ),
                       ),
                     ),
@@ -444,8 +464,16 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                           context.read<JamController>().skipToNext(),
                     ),
 
-                    // Balance Spacer
-                    const SizedBox(width: 48),
+                    // Lyrics Toggle Button
+                    IconButton(
+                      icon: Icon(
+                        _showLyrics ? Icons.music_note : Icons.lyrics_outlined,
+                        color: _showLyrics ? AppTheme.nebulaPurple : Colors.white,
+                        size: 24,
+                      ),
+                      tooltip: _showLyrics ? 'Show Art' : 'Show Lyrics',
+                      onPressed: () => setState(() => _showLyrics = !_showLyrics),
+                    ),
                   ],
                 ),
 

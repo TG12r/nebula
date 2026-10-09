@@ -98,4 +98,33 @@ class SettingsRepositoryImpl implements SettingsRepository {
       await _prefs?.setString(_kDownloadPath, value);
     }
   }
+
+  // Data Saver & Resource Consumption Keys
+  static const String _kDataSaver = 'settings_data_saver';
+  static const String _kLookaheadTracks = 'settings_lookahead_tracks';
+  static const String _kAudioCacheLimitMb = 'settings_audio_cache_limit_mb';
+
+  @override
+  bool get dataSaver => _prefs?.getBool(_kDataSaver) ?? false;
+
+  @override
+  Future<void> setDataSaver(bool value) async {
+    await _prefs?.setBool(_kDataSaver, value);
+  }
+
+  @override
+  int get lookaheadTracks => _prefs?.getInt(_kLookaheadTracks) ?? 2; // Default 2 tracks
+
+  @override
+  Future<void> setLookaheadTracks(int value) async {
+    await _prefs?.setInt(_kLookaheadTracks, value.clamp(0, 2));
+  }
+
+  @override
+  int get audioCacheLimitMb => _prefs?.getInt(_kAudioCacheLimitMb) ?? 500; // Default 500 MB
+
+  @override
+  Future<void> setAudioCacheLimitMb(int value) async {
+    await _prefs?.setInt(_kAudioCacheLimitMb, value);
+  }
 }

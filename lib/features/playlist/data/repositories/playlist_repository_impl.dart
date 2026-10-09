@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
@@ -24,7 +25,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
           .from('playlists')
           .select('*, playlist_tracks(count)')
           .eq('user_id', _userId)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 3));
 
       final data = response as List;
       final playlists = data.map((item) {
@@ -53,6 +55,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
 
       return playlists;
     } catch (e) {
+      debugPrint("PlaylistRepository: Network fetch failed ($e), falling back to Hive cache...");
       // Return cached data if available
       if (_box.containsKey('user_playlists')) {
         final cached = _box.get('user_playlists') as List;
@@ -70,7 +73,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         .from('playlists')
         .insert({'user_id': _userId, 'name': name})
         .select()
-        .single();
+        .single()
+        .timeout(const Duration(seconds: 4));
 
     final playlist = Playlist(
       id: response['id'] as String,
@@ -78,15 +82,39 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       userId: response['user_id'] as String,
     );
 
-    // Ideally update cache here or invalidate, but getPlaylists will refresh it.
+    // Update local cache
+    if (_box.containsKey('user_playlists')) {
+      final cached = (_box.get('user_playlists') as List)
+          .map((e) => Playlist.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      cached.insert(0, playlist);
+      await _box.put('user_playlists', cached.map((e) => e.toMap()).toList());
+    }
+
     return playlist;
   }
 
   @override
   Future<void> deletePlaylist(String playlistId) async {
-    await _supabase.from('playlists').delete().eq('id', playlistId);
-    // Invalidate cache implicitly or handle manually
-    // For now, re-fetch will handle it, or we could remove from box map.
+    try {
+      await _supabase
+          .from('playlists')
+          .delete()
+          .eq('id', playlistId)
+          .timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint("Error deleting playlist online: $e");
+    }
+
+    // Invalidate/delete from local cache
+    if (_box.containsKey('user_playlists')) {
+      final cached = (_box.get('user_playlists') as List)
+          .map((e) => Playlist.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      cached.removeWhere((p) => p.id == playlistId);
+      await _box.put('user_playlists', cached.map((e) => e.toMap()).toList());
+    }
+    await _box.delete('playlist_tracks_$playlistId');
   }
 
   @override
@@ -96,7 +124,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
           .from('playlist_tracks')
           .select()
           .eq('playlist_id', playlistId)
-          .order('added_at', ascending: false);
+          .order('added_at', ascending: false)
+          .timeout(const Duration(seconds: 3));
 
       final data = response as List;
       final tracks = data
@@ -134,14 +163,71 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
 
   @override
   Future<void> addTrackToPlaylist(String playlistId, Track track) async {
-    await _supabase.from('playlist_tracks').insert({
-      'playlist_id': playlistId,
-      'track_id': track.id,
-      'title': track.title,
-      'artist': track.artist,
-      'thumbnail_url': track.thumbnailUrl,
-      'duration_seconds': track.duration.inSeconds,
-    });
+    // 1. Update local cache immediately
+    if (_box.containsKey('playlist_tracks_$playlistId')) {
+      final cached = (_box.get('playlist_tracks_$playlistId') as List)
+          .map((e) => Track.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      cached.insert(0, track);
+      await _box.put(
+        'playlist_tracks_$playlistId',
+        cached.map((e) => e.toMap()).toList(),
+      );
+    }
+
+    // 2. Sync online in background
+    try {
+      await _supabase.from('playlist_tracks').insert({
+        'playlist_id': playlistId,
+        'track_id': track.id,
+        'title': track.title,
+        'artist': track.artist,
+        'thumbnail_url': track.thumbnailUrl,
+        'duration_seconds': track.duration.inSeconds,
+      }).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint("Error syncing added track to Supabase: $e");
+    }
+  }
+
+  @override
+  Future<void> addTracksToPlaylist(String playlistId, List<Track> tracks) async {
+    if (tracks.isEmpty) return;
+
+    // 1. Update local cache immediately
+    if (_box.containsKey('playlist_tracks_$playlistId')) {
+      final cached = (_box.get('playlist_tracks_$playlistId') as List)
+          .map((e) => Track.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      cached.insertAll(0, tracks);
+      await _box.put(
+        'playlist_tracks_$playlistId',
+        cached.map((e) => e.toMap()).toList(),
+      );
+    }
+
+    // 2. Sync online in background in a single batch insert
+    try {
+      final rows = tracks
+          .map(
+            (track) => {
+              'playlist_id': playlistId,
+              'track_id': track.id,
+              'title': track.title,
+              'artist': track.artist,
+              'thumbnail_url': track.thumbnailUrl,
+              'duration_seconds': track.duration.inSeconds,
+            },
+          )
+          .toList();
+
+      await _supabase
+          .from('playlist_tracks')
+          .insert(rows)
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint("Error syncing batch added tracks to Supabase: $e");
+    }
   }
 
   @override
@@ -149,22 +235,39 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     String playlistId,
     String trackId,
   ) async {
-    await _supabase
-        .from('playlist_tracks')
-        .delete()
-        .eq('playlist_id', playlistId)
-        .eq('track_id', trackId);
+    // 1. Update local cache immediately
+    if (_box.containsKey('playlist_tracks_$playlistId')) {
+      final cached = (_box.get('playlist_tracks_$playlistId') as List)
+          .map((e) => Track.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      cached.removeWhere((t) => t.id == trackId);
+      await _box.put(
+        'playlist_tracks_$playlistId',
+        cached.map((e) => e.toMap()).toList(),
+      );
+    }
+
+    // 2. Sync online in background
+    try {
+      await _supabase
+          .from('playlist_tracks')
+          .delete()
+          .eq('playlist_id', playlistId)
+          .eq('track_id', trackId)
+          .timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint("Error syncing removed track to Supabase: $e");
+    }
   }
 
   @override
   Future<List<String>> getPlaylistsContainingTrack(String trackId) async {
-    // This is less critical for offline usually, but could also be cached.
-    // For now keeping online-only or simple.
     try {
       final response = await _supabase
           .from('playlist_tracks')
           .select('playlist_id')
-          .eq('track_id', trackId);
+          .eq('track_id', trackId)
+          .timeout(const Duration(seconds: 3));
 
       final data = response as List;
       return data.map((e) => e['playlist_id'] as String).toList();

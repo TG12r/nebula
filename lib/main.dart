@@ -15,6 +15,7 @@ import 'package:nebula/features/favorites/presentation/logic/favorites_controlle
 import 'package:nebula/features/playlist/data/repositories/playlist_repository_impl.dart';
 import 'package:nebula/features/playlist/domain/repositories/playlist_repository.dart';
 import 'package:nebula/features/playlist/presentation/logic/playlist_controller.dart';
+import 'package:nebula/features/playlist/presentation/logic/playlist_import_controller.dart';
 import 'package:nebula/features/home/presentation/screens/main_screen.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
 import 'package:nebula/features/settings/data/repositories/settings_repository_impl.dart';
@@ -74,8 +75,9 @@ Future<void> main() async {
   // Initialize Hive for Downloads
   await Hive.initFlutter();
   final downloadsBox = await Hive.openBox('downloads');
-  // Initialize Hive for Playlists
+  // Initialize Hive for Playlists & Favorites
   final playlistBox = await Hive.openBox('playlists');
+  final favoritesBox = await Hive.openBox('favorites');
   // Initialize Hive for History
   final historyBox = await Hive.openBox('search_history');
   final playbackHistoryBox = await Hive.openBox('playback_history');
@@ -93,6 +95,7 @@ Future<void> main() async {
       downloadRepository: downloadRepo,
       soundcloudRepository: scRepo,
       playlistBox: playlistBox,
+      favoritesBox: favoritesBox,
       historyRepository: historyRepo,
       playbackHistoryRepository: playbackHistoryRepo,
     ),
@@ -107,6 +110,7 @@ class MainApp extends StatelessWidget {
   final DownloadRepository downloadRepository;
   final SoundCloudRepository soundcloudRepository;
   final Box playlistBox;
+  final Box favoritesBox;
   final SearchHistoryRepository historyRepository;
   final PlaybackHistoryRepository playbackHistoryRepository;
 
@@ -117,6 +121,7 @@ class MainApp extends StatelessWidget {
     required this.downloadRepository,
     required this.soundcloudRepository,
     required this.playlistBox,
+    required this.favoritesBox,
     required this.historyRepository,
     required this.playbackHistoryRepository,
   });
@@ -139,7 +144,7 @@ class MainApp extends StatelessWidget {
         ), // Injected value
 
         Provider<FavoritesRepository>(
-          create: (_) => FavoritesRepositoryImpl(Supabase.instance.client),
+          create: (_) => FavoritesRepositoryImpl(Supabase.instance.client, favoritesBox),
         ),
         Provider<PlaylistRepository>(
           create: (_) =>
@@ -185,6 +190,9 @@ class MainApp extends StatelessWidget {
           create: (context) =>
               PlaylistController(context.read<PlaylistRepository>()),
         ),
+        ChangeNotifierProvider<PlaylistImportController>(
+          create: (_) => PlaylistImportController(),
+        ),
 
         // Jam
         Provider<JamService>(
@@ -192,14 +200,10 @@ class MainApp extends StatelessWidget {
           dispose: (_, service) => service.dispose(),
         ),
         ChangeNotifierProvider<JamController>(
-          create: (context) {
-            final userId = Supabase.instance.client.auth.currentUser?.id ?? '';
-            return JamController(
-              context.read<JamService>(),
-              context.read<PlayerController>(),
-              userId,
-            );
-          },
+          create: (context) => JamController(
+            context.read<JamService>(),
+            context.read<PlayerController>(),
+          ),
         ),
       ],
       child: Consumer<SettingsController>(

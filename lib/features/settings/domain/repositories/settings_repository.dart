@@ -29,4 +29,14 @@ abstract class SettingsRepository {
   // Search Engine
   TrackSource get searchSource;
   Future<void> setSearchSource(TrackSource source);
+
+  // Data Saver & Resource Consumption
+  bool get dataSaver;
+  Future<void> setDataSaver(bool value);
+
+  int get lookaheadTracks;
+  Future<void> setLookaheadTracks(int value);
+
+  int get audioCacheLimitMb;
+  Future<void> setAudioCacheLimitMb(int value);
 }

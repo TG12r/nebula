@@ -106,7 +106,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                               await context
                                   .read<PlaylistController>()
                                   .deletePlaylist(widget.playlist.id);
-                              Navigator.pop(context);
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                              }
                             }
                           }
                         },

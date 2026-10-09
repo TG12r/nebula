@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:audio_session/audio_session.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 class NebulaAudioHandler extends BaseAudioHandler {
@@ -128,7 +129,14 @@ class NebulaAudioHandler extends BaseAudioHandler {
   Future<void> pause() => _player.pause();
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    if (_player.audioSource == null) return;
+    try {
+      await _player.seek(position);
+    } catch (e) {
+      debugPrint("Warning: seek failed on internal player: $e");
+    }
+  }
 
   @override
   Future<void> stop() => _player.stop();

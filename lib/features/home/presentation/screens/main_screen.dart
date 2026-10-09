@@ -8,6 +8,11 @@ import 'package:nebula/features/settings/presentation/screens/settings_screen.da
 import 'package:provider/provider.dart';
 import 'package:nebula/features/auth/data/auth_service.dart';
 import 'package:nebula/core/services/update_service.dart';
+import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
+import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
+import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
+import 'package:nebula/features/playlist/presentation/logic/playlist_import_controller.dart';
+import 'package:nebula/features/playlist/presentation/widgets/import_playlist_bottom_sheet.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -112,6 +117,90 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
               const Divider(color: Colors.white10),
+              Consumer<JamController>(
+                builder: (context, jam, _) {
+                  return ListTile(
+                    leading: Icon(
+                      jam.isInJam ? Icons.people : Icons.people_outline,
+                      color: jam.isInJam
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                    title: Row(
+                      children: [
+                        Text(
+                          'JAM SESSIONS',
+                          style: TextStyle(
+                            fontFamily: 'Courier New',
+                            fontWeight: FontWeight.bold,
+                            color: jam.isInJam
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        if (jam.isInJam) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '${jam.participants.length}',
+                              style: const TextStyle(
+                                fontFamily: 'Courier New',
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    onTap: () {
+                      Navigator.pop(context); // Close drawer
+                      if (jam.isInJam) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const JamScreen()),
+                        );
+                      } else {
+                        JamBottomSheet.show(context);
+                      }
+                    },
+                  );
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.playlist_add,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: Text(
+                  'IMPORT PLAYLIST',
+                  style: TextStyle(
+                    fontFamily: 'Courier New',
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                subtitle: Text(
+                  'SOURCE // SPOTIFY',
+                  style: TextStyle(
+                    fontFamily: 'Courier New',
+                    fontSize: 10,
+                    color: Theme.of(context).colorScheme.primary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // Close drawer
+                  context.read<PlaylistImportController>().reset();
+                  ImportPlaylistBottomSheet.show(context);
+                },
+              ),
               ListTile(
                 leading: Icon(
                   Icons.settings_outlined,

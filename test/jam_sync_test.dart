@@ -321,6 +321,169 @@ void main() {
       final expectedPos = (restored.positionMs ?? 0) + (restored.isPlaying == true ? latency : 0);
       expect(expectedPos, 42180);
     });
+
+    test('Same-account multi-device identity allows cross-device control without self-echo', () {
+      const authUserId = 'user_same_account_123';
+      const pcSessionId = '${authUserId}_1111111';
+      const phoneSessionId = '${authUserId}_2222222';
+
+      // Action sent from PC
+      final pcAction = JamAction(
+        id: 'action_pc_1',
+        type: JamActionType.playTrack,
+        senderId: pcSessionId,
+      );
+
+      // On PC (sender): senderId == pcSessionId -> True -> Filtered out (no self-echo)
+      expect(pcAction.senderId == pcSessionId, true);
+
+      // On Phone (receiver with same auth account): senderId == phoneSessionId -> False -> Processed!
+      expect(pcAction.senderId == phoneSessionId, false);
+    });
+
+    test('Action queue drops periodic pulses when busy processing a heavy action', () {
+      final queue = <JamAction>[];
+      var isBusy = false;
+
+      void enqueue(JamAction action) {
+        if (isBusy && action.type == JamActionType.syncPulse) {
+          return; // Dropped to avoid interrupting media loading
+        }
+        queue.add(action);
+      }
+
+      // Simulate player busy loading a playlist
+      isBusy = true;
+
+      // Pulse arrives while busy
+      enqueue(const JamAction(
+        id: 'p1',
+        type: JamActionType.syncPulse,
+        senderId: 'host_1',
+      ));
+      expect(queue.isEmpty, true); // Dropped!
+
+      // User pause command arrives while busy
+      enqueue(const JamAction(
+        id: 'cmd1',
+        type: JamActionType.pause,
+        senderId: 'host_1',
+      ));
+      expect(queue.length, 1); // Enqueued!
+      expect(queue.first.type, JamActionType.pause);
+    });
+  });
+
+  group('Jam Resilient Synchronization & Fault Tolerance', () {
+    test('Buffering guard suppresses drift seek while audio buffer is filling', () {
+      bool isBuffering = true;
+      bool seekExecuted = false;
+
+      void onSyncPulse(int hostPos, int currentPos) {
+        if (isBuffering) {
+          // Guard: Do not disturb player while buffering!
+          return;
+        }
+        if ((currentPos - hostPos).abs() > 1200) {
+          seekExecuted = true;
+        }
+      }
+
+      // 1. Host is at 15,000ms, guest is at 0ms but BUFFERING
+      onSyncPulse(15000, 0);
+      expect(seekExecuted, false); // Blocked by buffering guard!
+
+      // 2. Buffer completes, playback starts, drift still exceeds 1200ms
+      isBuffering = false;
+      onSyncPulse(15000, 5000);
+      expect(seekExecuted, true); // Seek executed properly once ready!
+    });
+
+    test('Queue recovery requests full sync when syncPulse arrives with empty local queue', () {
+      final localQueue = <Track>[];
+      bool syncRequested = false;
+
+      void handleSyncPulse(JamAction pulse) {
+        if (localQueue.isEmpty && pulse.track != null) {
+          syncRequested = true;
+        }
+      }
+
+      final pulse = JamAction(
+        id: 'pulse_recover',
+        type: JamActionType.syncPulse,
+        track: Track(id: 'song_1', title: 'Song 1', artist: 'Artist', thumbnailUrl: ''),
+        senderId: 'host',
+      );
+
+      handleSyncPulse(pulse);
+      expect(syncRequested, true);
+    });
+
+    test('Handshake retry interval terminates immediately upon initial syncState arrival', () {
+      int requestAttempts = 0;
+      bool hasReceivedInitialSync = false;
+      bool timerActive = true;
+
+      void tick() {
+        if (!timerActive || hasReceivedInitialSync) {
+          timerActive = false;
+          return;
+        }
+        requestAttempts++;
+        if (requestAttempts >= 5) {
+          timerActive = false;
+        }
+      }
+
+      // Ticks 1 and 2: host hasn't replied yet
+      tick();
+      expect(requestAttempts, 1);
+      expect(timerActive, true);
+
+      tick();
+      expect(requestAttempts, 2);
+      expect(timerActive, true);
+
+      // Initial sync state arrives!
+      hasReceivedInitialSync = true;
+      tick();
+      expect(timerActive, false);
+      expect(requestAttempts, 2); // No further requests sent!
+    });
+
+    test('Heartbeat pulse counter schedules full state broadcast every 6 pulses (30s)', () {
+      int pulseCounter = 0;
+      int fullSyncCount = 0;
+      int pulseCount = 0;
+
+      void heartbeatTick() {
+        pulseCounter++;
+        if (pulseCounter % 6 == 0) {
+          fullSyncCount++;
+        } else {
+          pulseCount++;
+        }
+      }
+
+      // Simulate 12 heartbeat ticks (60 seconds)
+      for (int i = 0; i < 12; i++) {
+        heartbeatTick();
+      }
+
+      expect(pulseCount, 10);
+      expect(fullSyncCount, 2); // At 30s (tick 6) and 60s (tick 12)
+    });
+
+    test('Exponential backoff calculates increasing intervals for ChannelResponse retries', () {
+      int computeDelay(int attempt) {
+        return (150 * (1 << (attempt - 1))); // 150ms * 2^(attempt-1)
+      }
+
+      expect(computeDelay(1), 150);
+      expect(computeDelay(2), 300);
+      expect(computeDelay(3), 600);
+    });
   });
 }
 

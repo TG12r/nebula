@@ -33,6 +33,7 @@ class PlayerController extends ChangeNotifier {
   String? get currentThumbnail => _currentTrack?.thumbnailUrl;
   Duration get duration => _duration;
   Duration get position => _position;
+  Stream<Duration> get positionStream => _repository.positionStream;
   List<Track> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
   bool get isBuffering => _isBuffering;
@@ -133,14 +134,26 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> playPlaylist(
     List<Track> tracks, {
-    int initialIndex = 0,
+    int? initialIndex,
     bool shuffle = false,
   }) async {
+    if (tracks.isEmpty) return;
+
     if (shuffle) {
-      final shuffled = List<Track>.from(tracks)..shuffle();
-      await _repository.setQueue(shuffled, initialIndex: 0);
+      if (initialIndex != null && initialIndex >= 0 && initialIndex < tracks.length) {
+        final selectedTrack = tracks[initialIndex];
+        final remainingTracks = List<Track>.from(tracks)..removeAt(initialIndex);
+        remainingTracks.shuffle();
+        await _repository.setQueue([selectedTrack, ...remainingTracks], initialIndex: 0);
+      } else {
+        final shuffled = List<Track>.from(tracks)..shuffle();
+        await _repository.setQueue(shuffled, initialIndex: 0);
+      }
     } else {
-      await _repository.setQueue(tracks, initialIndex: initialIndex);
+      await _repository.setQueue(
+        tracks,
+        initialIndex: (initialIndex ?? 0).clamp(0, tracks.length - 1),
+      );
     }
   }
 

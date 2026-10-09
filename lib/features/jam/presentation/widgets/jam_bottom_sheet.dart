@@ -90,24 +90,27 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     return Theme(
       data: AppTheme.darkTheme,
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
         decoration: BoxDecoration(
           color: AppTheme.cmfDarkGrey,
           border: Border(
             top: BorderSide(
-              color: AppTheme.nebulaPurple.withOpacity(0.4),
+              color: AppTheme.nebulaPurple.withValues(alpha: 0.4),
               width: 1,
             ),
           ),
         ),
         child: SafeArea(
           top: false,
-          child: _createdCode != null
-              ? _buildCreatedView()
-              : _buildCreateOrJoinView(),
+          child: SingleChildScrollView(
+            child: _createdCode != null
+                ? _buildCreatedView()
+                : _buildCreateOrJoinView(),
+          ),
         ),
       ),
     );

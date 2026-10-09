@@ -12,7 +12,38 @@ class SettingsController extends ChangeNotifier {
   final SettingsRepository _repository;
   final DownloadRepository _downloadRepository;
 
-  SettingsController(this._repository, this._downloadRepository);
+  bool _isBatteryOptimizationIgnored = false;
+  bool get isBatteryOptimizationIgnored => _isBatteryOptimizationIgnored;
+
+  SettingsController(this._repository, this._downloadRepository) {
+    checkBatteryOptimization();
+  }
+
+  Future<void> checkBatteryOptimization() async {
+    if (Platform.isAndroid) {
+      try {
+        _isBatteryOptimizationIgnored =
+            await Permission.ignoreBatteryOptimizations.isGranted;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error checking battery optimization: $e');
+      }
+    }
+  }
+
+  Future<bool> requestBatteryOptimizationExemption() async {
+    if (Platform.isAndroid) {
+      try {
+        final status = await Permission.ignoreBatteryOptimizations.request();
+        _isBatteryOptimizationIgnored = status.isGranted;
+        notifyListeners();
+        return status.isGranted;
+      } catch (e) {
+        debugPrint('Error requesting battery optimization exemption: $e');
+      }
+    }
+    return true;
+  }
 
   // Migration state
   bool _isMigrating = false;
@@ -146,6 +177,28 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> toggleAnonymousMetrics() async {
     await _repository.setAnonymousMetrics(!anonymousMetrics);
+    notifyListeners();
+  }
+
+  // Data Saver & Power Consumption
+  bool get dataSaver => _repository.dataSaver;
+
+  Future<void> toggleDataSaver() async {
+    await _repository.setDataSaver(!dataSaver);
+    notifyListeners();
+  }
+
+  int get lookaheadTracks => _repository.lookaheadTracks;
+
+  Future<void> setLookaheadTracks(int count) async {
+    await _repository.setLookaheadTracks(count);
+    notifyListeners();
+  }
+
+  int get audioCacheLimitMb => _repository.audioCacheLimitMb;
+
+  Future<void> setAudioCacheLimitMb(int limitMb) async {
+    await _repository.setAudioCacheLimitMb(limitMb);
     notifyListeners();
   }
 

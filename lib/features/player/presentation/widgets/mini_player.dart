@@ -7,6 +7,8 @@ import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/features/player/presentation/screens/full_player_screen.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
+import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
+import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -143,32 +145,55 @@ class MiniPlayer extends StatelessWidget {
                   ),
                 ),
 
-                // Jam indicator
+                // Jam Interactive Button & Indicator
                 Consumer<JamController>(
                   builder: (context, jam, _) {
-                    if (!jam.isInJam) return const SizedBox.shrink();
-                    return Container(
-                      margin: const EdgeInsets.only(right: 4),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: AppTheme.nebulaPurple.withValues(alpha: 0.6),
-                          width: 1,
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          tooltip: jam.isInJam ? 'Jam Session Active' : 'Start/Join Jam',
+                          icon: Icon(
+                            jam.isInJam ? Icons.people : Icons.people_outline,
+                            color: jam.isInJam ? AppTheme.nebulaPurple : Colors.white60,
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            if (jam.isInJam) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const JamScreen(),
+                                ),
+                              );
+                            } else {
+                              JamBottomSheet.show(context);
+                            }
+                          },
                         ),
-                      ),
-                      child: const Text(
-                        'JAM',
-                        style: TextStyle(
-                          fontFamily: 'Courier New',
-                          color: AppTheme.nebulaPurple,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
+                        if (jam.isInJam && jam.participants.isNotEmpty)
+                          Positioned(
+                            right: 4,
+                            top: 4,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: AppTheme.nebulaPurple,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${jam.participants.length}',
+                                style: const TextStyle(
+                                  fontFamily: 'Courier New',
+                                  color: Colors.white,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     );
                   },
                 ),
