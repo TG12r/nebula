@@ -26,6 +26,8 @@ class FakeSettingsRepository implements SettingsRepository {
   TrackSource searchSource = TrackSource.youtube;
   @override
   String? downloadPath;
+  @override
+  double volume = 1.0;
 
   @override
   Future<void> init() async {}
@@ -49,6 +51,8 @@ class FakeSettingsRepository implements SettingsRepository {
   Future<void> setSearchSource(TrackSource source) async => searchSource = source;
   @override
   Future<void> setDownloadPath(String? value) async => downloadPath = value;
+  @override
+  Future<void> setVolume(double value) async => volume = value;
 }
 
 class FakeDownloadRepository implements DownloadRepository {

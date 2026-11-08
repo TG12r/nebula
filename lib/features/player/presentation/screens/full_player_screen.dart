@@ -12,6 +12,8 @@ import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
 import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
 import 'package:nebula/features/player/presentation/widgets/lyrics_view.dart';
+import 'package:nebula/core/utils/platform_utils.dart';
+import 'package:nebula/features/player/presentation/widgets/desktop_volume_control.dart';
 
 class FullPlayerScreen extends StatefulWidget {
   const FullPlayerScreen({super.key});
@@ -476,6 +478,15 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                     ),
                   ],
                 ),
+
+                if (isDesktop) ...[
+                  const SizedBox(height: 12),
+                  const Center(
+                    child: DesktopVolumeControl(
+                      sliderWidth: 160.0,
+                    ),
+                  ),
+                ],
 
                 const Spacer(flex: 2),
               ],

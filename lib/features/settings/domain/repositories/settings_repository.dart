@@ -39,4 +39,8 @@ abstract class SettingsRepository {
 
   int get audioCacheLimitMb;
   Future<void> setAudioCacheLimitMb(int value);
+
+  // Volume (0.0 to 1.0)
+  double get volume;
+  Future<void> setVolume(double value);
 }

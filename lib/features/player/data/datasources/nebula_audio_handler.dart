@@ -124,6 +124,15 @@ class NebulaAudioHandler extends BaseAudioHandler {
 
   AudioPlayer get internalPlayer => _player;
 
+  /// Sets playback volume (clamped between 0.0 and 1.0)
+  Future<void> setVolume(double volume) async {
+    await _player.setVolume(volume.clamp(0.0, 1.0));
+  }
+
+  double get volume => _player.volume;
+
+  Stream<double> get volumeStream => _player.volumeStream;
+
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
   int? get currentIndex => _player.currentIndex;

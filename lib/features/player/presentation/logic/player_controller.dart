@@ -17,6 +17,8 @@ class PlayerController extends ChangeNotifier {
   String? _lastHistoryTrackId;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  double _volume = 1.0;
+  double _lastNonZeroVolume = 0.5;
 
   List<Track> _searchResults = [];
   bool _isSearching = false;
@@ -33,6 +35,8 @@ class PlayerController extends ChangeNotifier {
   String? get currentThumbnail => _currentTrack?.thumbnailUrl;
   Duration get duration => _duration;
   Duration get position => _position;
+  double get volume => _volume;
+  bool get isMuted => _volume == 0.0;
   Stream<Duration> get positionStream => _repository.positionStream;
   List<Track> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
@@ -76,6 +80,17 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _initStreams() {
+    _volume = _repository.volume;
+    if (_volume > 0) _lastNonZeroVolume = _volume;
+
+    _subscriptions.add(
+      _repository.volumeStream.listen((v) {
+        _volume = v;
+        if (v > 0) _lastNonZeroVolume = v;
+        notifyListeners();
+      }),
+    );
+
     _subscriptions.add(
       _repository.positionStream.listen((p) {
         _position = p;
@@ -248,6 +263,37 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> seek(Duration position) async {
     await _repository.seek(position);
+  }
+
+  /// Sets the volume between 0.0 (muted) and 1.0 (100%).
+  Future<void> setVolume(double value) async {
+    final clamped = value.clamp(0.0, 1.0);
+    _volume = clamped;
+    if (clamped > 0) {
+      _lastNonZeroVolume = clamped;
+    }
+    notifyListeners();
+    await _repository.setVolume(clamped);
+  }
+
+  /// Toggles between muted and the last non-zero volume.
+  Future<void> toggleMute() async {
+    if (_volume > 0.0) {
+      _lastNonZeroVolume = _volume;
+      await setVolume(0.0);
+    } else {
+      await setVolume(_lastNonZeroVolume > 0.0 ? _lastNonZeroVolume : 0.5);
+    }
+  }
+
+  /// Increases volume by [step] (defaults to 0.05 or 5%).
+  Future<void> increaseVolume([double step = 0.05]) async {
+    await setVolume((_volume + step).clamp(0.0, 1.0));
+  }
+
+  /// Decreases volume by [step] (defaults to 0.05 or 5%).
+  Future<void> decreaseVolume([double step = 0.05]) async {
+    await setVolume((_volume - step).clamp(0.0, 1.0));
   }
 
   Future<void> search(String query) async {

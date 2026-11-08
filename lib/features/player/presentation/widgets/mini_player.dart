@@ -9,6 +9,8 @@ import 'package:nebula/shared/widgets/widgets.dart';
 import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 import 'package:nebula/features/jam/presentation/widgets/jam_bottom_sheet.dart';
 import 'package:nebula/features/jam/presentation/screens/jam_screen.dart';
+import 'package:nebula/core/utils/platform_utils.dart';
+import 'package:nebula/features/player/presentation/widgets/desktop_volume_control.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -211,6 +213,12 @@ class MiniPlayer extends StatelessWidget {
                   ),
                   splashRadius: 20,
                 ),
+
+                // Desktop Volume Control
+                if (isDesktop) ...[
+                  const SizedBox(width: 4),
+                  const DesktopVolumeControl(),
+                ],
 
                 const SizedBox(width: 8),
               ],

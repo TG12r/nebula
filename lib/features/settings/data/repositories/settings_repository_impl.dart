@@ -103,6 +103,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
   static const String _kDataSaver = 'settings_data_saver';
   static const String _kLookaheadTracks = 'settings_lookahead_tracks';
   static const String _kAudioCacheLimitMb = 'settings_audio_cache_limit_mb';
+  static const String _kVolume = 'settings_volume';
 
   @override
   bool get dataSaver => _prefs?.getBool(_kDataSaver) ?? false;
@@ -126,5 +127,13 @@ class SettingsRepositoryImpl implements SettingsRepository {
   @override
   Future<void> setAudioCacheLimitMb(int value) async {
     await _prefs?.setInt(_kAudioCacheLimitMb, value);
+  }
+
+  @override
+  double get volume => _prefs?.getDouble(_kVolume) ?? 1.0; // Default 100% volume
+
+  @override
+  Future<void> setVolume(double value) async {
+    await _prefs?.setDouble(_kVolume, value.clamp(0.0, 1.0));
   }
 }

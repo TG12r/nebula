@@ -19,10 +19,13 @@ abstract class PlayerRepository {
   Future<void> pause();
   Future<void> resume(); // distinct from play(id)
   Future<void> seek(Duration position);
+  Future<void> setVolume(double volume);
   Future<List<Track>> search(String query);
   void dispose();
 
   // State Streams
+  double get volume;
+  Stream<double> get volumeStream;
   Stream<Duration> get positionStream;
   Stream<Duration> get durationStream;
   Stream<bool> get isPlayingStream;

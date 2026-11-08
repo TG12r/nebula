@@ -41,6 +41,11 @@ class PlayerRepositoryImpl implements PlayerRepository {
     this._scRepository,
   ) {
     _initIndexListener();
+    _initVolume();
+  }
+
+  void _initVolume() {
+    _audioHandler.setVolume(_settingsRepository.volume);
   }
 
   void _initIndexListener() {
@@ -447,6 +452,19 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   @override
   Future<void> seek(Duration position) => _audioHandler.seek(position);
+
+  @override
+  double get volume => _audioHandler.volume;
+
+  @override
+  Stream<double> get volumeStream => _audioHandler.volumeStream;
+
+  @override
+  Future<void> setVolume(double volume) async {
+    final clamped = volume.clamp(0.0, 1.0);
+    await _audioHandler.setVolume(clamped);
+    await _settingsRepository.setVolume(clamped);
+  }
 
   @override
   Future<List<Track>> search(String query) async {

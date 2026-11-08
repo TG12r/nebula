@@ -77,6 +77,17 @@ class FakePlayerRepository implements PlayerRepository {
   @override
   Future<void> pause() async {}
   @override
+  double volume = 1.0;
+  final _volumeController = BehaviorSubject<double>.seeded(1.0);
+  @override
+  Stream<double> get volumeStream => _volumeController.stream;
+  @override
+  Future<void> setVolume(double value) async {
+    volume = value;
+    _volumeController.add(value);
+  }
+
+  @override
   Future<void> resume() async {}
   @override
   Future<void> seek(Duration position) async {}

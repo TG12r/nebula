@@ -74,6 +74,22 @@ class FakeNebulaAudioHandler extends Fake implements NebulaAudioHandler {
 
   @override
   Future<void> stop() async {}
+
+  double _volume = 1.0;
+  final BehaviorSubject<double> _volumeController =
+      BehaviorSubject<double>.seeded(1.0);
+
+  @override
+  double get volume => _volume;
+
+  @override
+  Stream<double> get volumeStream => _volumeController.stream;
+
+  @override
+  Future<void> setVolume(double value) async {
+    _volume = value;
+    _volumeController.add(value);
+  }
 }
 
 class FakeDownloadRepository implements DownloadRepository {
@@ -170,6 +186,13 @@ class FakeSettingsRepository implements SettingsRepository {
   int get audioCacheLimitMb => 100;
   @override
   Future<void> setAudioCacheLimitMb(int value) async {}
+
+  @override
+  double volume = 1.0;
+  @override
+  Future<void> setVolume(double value) async {
+    volume = value;
+  }
 }
 
 class FakeSoundCloudRepository extends Fake implements SoundCloudRepository {

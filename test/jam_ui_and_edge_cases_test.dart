@@ -274,6 +274,29 @@ class _MockPlayerController extends ChangeNotifier implements PlayerController {
   }
 
   @override
+  double volume = 1.0;
+  @override
+  bool get isMuted => volume == 0.0;
+  @override
+  Future<void> setVolume(double value) async {
+    volume = value.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+  @override
+  Future<void> toggleMute() async {
+    volume = volume > 0.0 ? 0.0 : 1.0;
+    notifyListeners();
+  }
+  @override
+  Future<void> increaseVolume([double step = 0.05]) async {
+    await setVolume(volume + step);
+  }
+  @override
+  Future<void> decreaseVolume([double step = 0.05]) async {
+    await setVolume(volume - step);
+  }
+
+  @override
   Future<bool> playMix(String query) async => false;
   @override
   Future<void> search(String query) async {}
