@@ -10,10 +10,11 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 import 'package:nebula/core/services/notification_service.dart';
 
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
-import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
 
 class DownloadRepositoryImpl implements DownloadRepository {
+  static const int minValidFileBytes = 10240; // 10 KB minimum valid audio size
+
   final Box _box;
   final SettingsRepository _settingsRepository;
   final SoundCloudRepository _scRepository;
@@ -24,7 +25,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
   final Map<String, StreamController<double>> _progressControllers = {};
 
   DownloadRepositoryImpl(
-    this._box, 
+    this._box,
     this._settingsRepository,
     this._scRepository,
   );
@@ -57,11 +58,14 @@ class DownloadRepositoryImpl implements DownloadRepository {
     if (key == null) return false;
 
     final path = _box.get(key);
-    if (path != null && File(path).existsSync()) {
-      return true;
+    if (path != null) {
+      final file = File(path);
+      if (file.existsSync() && file.lengthSync() >= minValidFileBytes) {
+        return true;
+      }
     }
 
-    // Cleanup if record exists but file is missing
+    // Cleanup if record exists but file is missing or corrupted
     if (path != null) {
       _box.delete(key);
       final safeId = TrackSource.stripPrefix(trackId);
@@ -78,8 +82,11 @@ class DownloadRepositoryImpl implements DownloadRepository {
     if (key == null) return null;
 
     final path = _box.get(key);
-    if (path != null && File(path).existsSync()) {
-      return path;
+    if (path != null) {
+      final file = File(path);
+      if (file.existsSync() && file.lengthSync() >= minValidFileBytes) {
+        return path;
+      }
     }
     return null;
   }
@@ -131,6 +138,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
     }
 
     String? savePath;
+    String? tempPath;
 
     try {
       final customDir = _settingsRepository.downloadPath;
@@ -142,94 +150,211 @@ class DownloadRepositoryImpl implements DownloadRepository {
       }
 
       final safeTitle = TrackSource.stripPrefix(track.id);
-      
+      int totalBytes = -1;
+      int receivedBytes = 0;
+
       if (track.source == TrackSource.soundcloud) {
         // --- SoundCloud Download ---
         final streamUrl = await _scRepository.getStreamUrl(track.id);
-        if (streamUrl == null) throw Exception("Could not get SoundCloud stream URL");
+        if (streamUrl == null) {
+          throw Exception("Could not get SoundCloud stream URL");
+        }
 
-        savePath = '${dir.path}/sc_${safeTitle}.mp3';
-        final file = File(savePath);
-        final fileSink = file.openWrite();
+        savePath = '${dir.path}/sc_$safeTitle.mp3';
+        tempPath = '$savePath.part';
+        final tempFile = File(tempPath);
+        final fileSink = tempFile.openWrite();
+        final client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 15);
 
-        final client = HttpClient();
-        final request = await client.getUrl(Uri.parse(streamUrl));
-        final response = await request.close();
+        try {
+          final request = await client.getUrl(Uri.parse(streamUrl));
+          final response = await request.close();
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            throw Exception(
+              "SoundCloud download HTTP error: ${response.statusCode}",
+            );
+          }
 
-        final totalBytes = response.contentLength;
-        var receivedBytes = 0;
-        var lastNotifTime = DateTime.now();
+          totalBytes = response.contentLength;
+          var lastNotifTime = DateTime.now();
 
-        await for (final data in response) {
-          fileSink.add(data);
-          receivedBytes += data.length;
-          if (totalBytes != -1) {
-            final progress = receivedBytes / totalBytes;
-            controller.add(progress);
-            if (DateTime.now().difference(lastNotifTime).inMilliseconds > 500) {
-              try {
-                NotificationService().showProgress(
-                  notifId,
-                  "Downloading ${track.title}",
-                  "${(progress * 100).toInt()}%",
-                  (progress * 100).toInt(),
-                  100,
-                );
-              } catch (_) {}
-              lastNotifTime = DateTime.now();
+          await for (final data in response) {
+            fileSink.add(data);
+            receivedBytes += data.length;
+            if (totalBytes > 0) {
+              final progress = (receivedBytes / totalBytes).clamp(0.0, 0.99);
+              controller.add(progress);
+              if (DateTime.now().difference(lastNotifTime).inMilliseconds >
+                  500) {
+                try {
+                  NotificationService().showProgress(
+                    notifId,
+                    "Downloading ${track.title}",
+                    "${(progress * 100).toInt()}%",
+                    (progress * 100).toInt(),
+                    100,
+                  );
+                } catch (_) {}
+                lastNotifTime = DateTime.now();
+              }
             }
           }
+          await fileSink.flush();
+        } finally {
+          await fileSink.close();
+          client.close();
         }
-        await fileSink.flush();
-        await fileSink.close();
+
+        // If SoundCloud returned an HLS (#EXTM3U) playlist (common on 20+ minute mixes/sets),
+        // download and concatenate all audio segments into a contiguous .mp3 file.
+        final probeBytes = await tempFile.openRead(0, 10).fold<List<int>>(
+          [],
+          (prev, chunk) => prev..addAll(chunk),
+        );
+        final probeHeader = String.fromCharCodes(probeBytes).trim();
+        if (probeHeader.startsWith('#EXTM3U')) {
+          final manifestText = await tempFile.readAsString();
+          final segmentUris = _parseHlsSegments(
+            manifestText,
+            Uri.parse(streamUrl),
+          );
+          if (segmentUris.isEmpty) {
+            throw Exception(
+              "HLS manifest for ${track.title} contains no downloadable audio segments",
+            );
+          }
+
+          debugPrint(
+            "SoundCloud: Downloading ${segmentUris.length} HLS audio segments for ${track.title}...",
+          );
+          final segSink = tempFile.openWrite();
+          final segClient = HttpClient()
+            ..connectionTimeout = const Duration(seconds: 15);
+          totalBytes = -1;
+          receivedBytes = 0;
+          var lastNotifTime = DateTime.now();
+
+          try {
+            for (int i = 0; i < segmentUris.length; i++) {
+              final segReq = await segClient.getUrl(segmentUris[i]);
+              final segRes = await segReq.close();
+              if (segRes.statusCode < 200 || segRes.statusCode >= 300) {
+                throw Exception(
+                  "SoundCloud HLS segment $i HTTP error: ${segRes.statusCode}",
+                );
+              }
+              await for (final chunk in segRes) {
+                segSink.add(chunk);
+                receivedBytes += chunk.length;
+              }
+              final progress = ((i + 1) / segmentUris.length).clamp(0.0, 0.99);
+              controller.add(progress);
+              if (DateTime.now().difference(lastNotifTime).inMilliseconds >
+                  500) {
+                try {
+                  NotificationService().showProgress(
+                    notifId,
+                    "Downloading ${track.title}",
+                    "${(progress * 100).toInt()}%",
+                    (progress * 100).toInt(),
+                    100,
+                  );
+                } catch (_) {}
+                lastNotifTime = DateTime.now();
+              }
+            }
+            await segSink.flush();
+          } finally {
+            await segSink.close();
+            segClient.close();
+          }
+        }
       } else {
         // --- YouTube Download ---
         final manifest = await _yt.videos.streamsClient.getManifest(track.rawId);
 
-        yt_lib.AudioOnlyStreamInfo? audioStream;
-        try {
-          audioStream = manifest.audioOnly.firstWhere(
-            (s) =>
-                s.container.name.toLowerCase() == 'm4a' ||
-                s.container.name.toLowerCase() == 'mp4',
-          );
-        } catch (_) {}
-        audioStream ??= manifest.audioOnly.withHighestBitrate();
+        // Prefer the highest-bitrate MP4/M4A (AAC-LC) stream so long 20+ minute
+        // tracks have maximum compatibility with Android ExoPlayer's local MP4 extractor.
+        final mp4Streams = manifest.audioOnly.where(
+          (s) =>
+              s.container.name.toLowerCase() == 'm4a' ||
+              s.container.name.toLowerCase() == 'mp4',
+        );
+        final yt_lib.AudioOnlyStreamInfo audioStream = mp4Streams.isNotEmpty
+            ? mp4Streams.withHighestBitrate()
+            : manifest.audioOnly.withHighestBitrate();
 
         final extension = audioStream.container.name;
-        savePath = '${dir.path}/yt_${safeTitle}.$extension';
+        savePath = '${dir.path}/yt_$safeTitle.$extension';
+        tempPath = '$savePath.part';
 
         final stream = _yt.videos.streamsClient.get(audioStream);
-        final file = File(savePath);
-        final fileSink = file.openWrite();
+        final tempFile = File(tempPath);
+        final fileSink = tempFile.openWrite();
 
-        final totalBytes = audioStream.size.totalBytes;
-        var receivedBytes = 0;
-        var lastNotifTime = DateTime.now();
+        try {
+          totalBytes = audioStream.size.totalBytes;
+          var lastNotifTime = DateTime.now();
 
-        await for (final data in stream) {
-          fileSink.add(data);
-          receivedBytes += data.length;
-          if (totalBytes != 0) {
-            final progress = receivedBytes / totalBytes;
-            controller.add(progress);
-            if (DateTime.now().difference(lastNotifTime).inMilliseconds > 500) {
-              try {
-                NotificationService().showProgress(
-                  notifId,
-                  "Downloading ${track.title}",
-                  "${(progress * 100).toInt()}%",
-                  (progress * 100).toInt(),
-                  100,
-                );
-              } catch (_) {}
-              lastNotifTime = DateTime.now();
+          await for (final data in stream) {
+            fileSink.add(data);
+            receivedBytes += data.length;
+            if (totalBytes > 0) {
+              final progress = (receivedBytes / totalBytes).clamp(0.0, 0.99);
+              controller.add(progress);
+              if (DateTime.now().difference(lastNotifTime).inMilliseconds >
+                  500) {
+                try {
+                  NotificationService().showProgress(
+                    notifId,
+                    "Downloading ${track.title}",
+                    "${(progress * 100).toInt()}%",
+                    (progress * 100).toInt(),
+                    100,
+                  );
+                } catch (_) {}
+                lastNotifTime = DateTime.now();
+              }
             }
           }
+          await fileSink.flush();
+        } finally {
+          await fileSink.close();
         }
-        await fileSink.flush();
-        await fileSink.close();
       }
+
+      // 3. Verify integrity before committing
+      if (totalBytes > 0 && receivedBytes < totalBytes) {
+        throw Exception(
+          "Incomplete download for ${track.title}: received $receivedBytes of $totalBytes bytes",
+        );
+      }
+
+      final tempFile = File(tempPath);
+      final writtenSize = await tempFile.length();
+      if (writtenSize < minValidFileBytes) {
+        throw Exception(
+          "Downloaded file for ${track.title} is too small ($writtenSize bytes)",
+        );
+      }
+
+      final firstBytes = await tempFile.openRead(0, 10).fold<List<int>>(
+        [],
+        (prev, chunk) => prev..addAll(chunk),
+      );
+      final header = String.fromCharCodes(firstBytes).trim();
+      if (header.startsWith('#EXTM3U')) {
+        throw Exception(
+          "Downloaded content for ${track.title} is an HLS manifest (#EXTM3U), not a direct audio file",
+        );
+      }
+
+      final finalFile = File(savePath);
+      if (await finalFile.exists()) {
+        await finalFile.delete();
+      }
+      await tempFile.rename(savePath);
 
       // 4. Save to Hive using storageId
       await _box.put(track.storageId, savePath);
@@ -253,22 +378,26 @@ class DownloadRepositoryImpl implements DownloadRepository {
       });
     } catch (e) {
       debugPrint("Download failed: $e");
-      controller.addError(e);
+      if (controller.hasListener) {
+        controller.addError(e);
+      }
       _progressControllers[track.id]?.close();
       _progressControllers.remove(track.id);
       try {
         await NotificationService().cancel(notifId);
       } catch (_) {}
 
-      // Cleanup partial file
-      if (savePath != null) {
-        try {
-          final file = File(savePath);
-          if (await file.exists()) {
-            await file.delete();
+      // Cleanup temporary and partial files
+      for (final path in [tempPath, savePath]) {
+        if (path != null) {
+          try {
+            final file = File(path);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (_) {
+            // Ignore cleanup errors
           }
-        } catch (_) {
-          // Ignore cleanup errors
         }
       }
     }
@@ -290,15 +419,37 @@ class DownloadRepositoryImpl implements DownloadRepository {
     await _box.delete('sc:$safeId');
 
     if (path != null) {
-      try {
-        final file = File(path);
-        if (await file.exists()) {
-          await file.delete();
+      for (final targetPath in [path, '$path.part']) {
+        try {
+          final file = File(targetPath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          debugPrint("Error deleting file: $e");
         }
-      } catch (e) {
-        debugPrint("Error deleting file: $e");
       }
     }
+  }
+
+  List<Uri> _parseHlsSegments(String manifestContent, Uri baseUri) {
+    final segments = <Uri>[];
+    final lines = manifestContent.split(RegExp(r'\r?\n'));
+    final mapRegex = RegExp(r'#EXT-X-MAP:.*URI="([^"]+)"');
+
+    for (final rawLine in lines) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      if (line.startsWith('#')) {
+        final match = mapRegex.firstMatch(line);
+        if (match != null && match.group(1) != null) {
+          segments.add(baseUri.resolve(match.group(1)!));
+        }
+        continue;
+      }
+      segments.add(baseUri.resolve(line));
+    }
+    return segments;
   }
 
   StreamController<double> _getProgressController(String trackId) {
