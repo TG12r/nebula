@@ -11,4 +11,8 @@ abstract class PlaylistRepository {
   Future<void> addTracksToPlaylist(String playlistId, List<Track> tracks);
   Future<void> removeTrackFromPlaylist(String playlistId, String trackId);
   Future<List<String>> getPlaylistsContainingTrack(String trackId);
+  Future<void> savePlaylistsOrder(List<String> playlistIds);
+  Future<List<String>> getPlaylistsOrder();
+  Future<void> savePlaylistSortType(String sortType);
+  Future<String?> getPlaylistSortType();
 }

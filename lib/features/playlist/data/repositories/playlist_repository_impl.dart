@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
-import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/features/playlist/domain/entities/playlist.dart';
 import 'package:nebula/features/playlist/domain/repositories/playlist_repository.dart';
 
@@ -53,15 +52,40 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         playlists.map((e) => e.toMap()).toList(),
       );
 
+      final customOrder = await getPlaylistsOrder();
+      if (customOrder.isNotEmpty) {
+        playlists.sort((a, b) {
+          final idxA = customOrder.indexOf(a.id);
+          final idxB = customOrder.indexOf(b.id);
+          if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+          if (idxA != -1) return -1;
+          if (idxB != -1) return 1;
+          return 0;
+        });
+      }
+
       return playlists;
     } catch (e) {
       debugPrint("PlaylistRepository: Network fetch failed ($e), falling back to Hive cache...");
       // Return cached data if available
       if (_box.containsKey('user_playlists')) {
         final cached = _box.get('user_playlists') as List;
-        return cached
+        final playlists = cached
             .map((e) => Playlist.fromMap(Map<String, dynamic>.from(e as Map)))
             .toList();
+
+        final customOrder = await getPlaylistsOrder();
+        if (customOrder.isNotEmpty) {
+          playlists.sort((a, b) {
+            final idxA = customOrder.indexOf(a.id);
+            final idxB = customOrder.indexOf(b.id);
+            if (idxA != -1 && idxB != -1) return idxA.compareTo(idxB);
+            if (idxA != -1) return -1;
+            if (idxB != -1) return 1;
+            return 0;
+          });
+        }
+        return playlists;
       }
       rethrow;
     }
@@ -274,5 +298,31 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     } catch (e) {
       return [];
     }
+  }
+
+  @override
+  Future<void> savePlaylistsOrder(List<String> playlistIds) async {
+    await _box.put('playlist_custom_order', playlistIds);
+  }
+
+  @override
+  Future<List<String>> getPlaylistsOrder() async {
+    if (_box.containsKey('playlist_custom_order')) {
+      final list = _box.get('playlist_custom_order');
+      if (list is List) {
+        return list.cast<String>();
+      }
+    }
+    return [];
+  }
+
+  @override
+  Future<void> savePlaylistSortType(String sortType) async {
+    await _box.put('playlist_sort_type', sortType);
+  }
+
+  @override
+  Future<String?> getPlaylistSortType() async {
+    return _box.get('playlist_sort_type') as String?;
   }
 }

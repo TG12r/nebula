@@ -1,3 +1,11 @@
+enum PlaylistSortType {
+  custom,
+  nameAsc,
+  nameDesc,
+  tracksCount,
+  recent,
+}
+
 class Playlist {
   final String id;
   final String name;
