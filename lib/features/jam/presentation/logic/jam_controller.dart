@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:nebula/features/jam/data/jam_service.dart';
@@ -18,11 +17,11 @@ enum JamSyncStatus {
 /// [JamService] (network) and [PlayerController] (local playback).
 ///
 /// Features:
-/// - Anti-echo guard to prevent infinite broadcast loops.
-/// - Network latency and loading time compensation using timestamps.
-/// - Continuous periodic heartbeat (syncPulse) by the Host with 1200ms drift threshold.
-/// - Complete queue and playlist synchronization across all devices.
-/// - Automatic host migration if the current host disconnects.
+/// - Anti-echo guard for both remote and local actions to prevent broadcast loops.
+/// - Network latency and local media loading time compensation.
+/// - Continuous periodic heartbeat (syncPulse) by the Host with drift correction.
+/// - Complete queue and playlist synchronization across all devices without audio dropouts.
+/// - Deterministic automatic host migration if the current host disconnects.
 class JamController extends ChangeNotifier {
   final JamService _jamService;
   final PlayerController _playerController;
@@ -35,19 +34,54 @@ class JamController extends ChangeNotifier {
   String? _lastActionBy;
   JamSyncStatus _syncStatus = JamSyncStatus.synced;
 
-  // Guard to prevent echo loops when applying remote actions
+  // Guards to prevent echo loops when applying remote or local actions
   bool _isApplyingRemoteAction = false;
+  int _localActionDepth = 0;
+  bool get _isPerformingLocalAction => _localActionDepth > 0;
+
   bool _isProcessingAction = false;
   final List<JamAction> _actionQueue = [];
   bool _hasReceivedInitialSync = false;
+  bool _hasObservedHost = false;
+  DateTime? _sessionJoinTime;
+  DateTime? _lastTrackChangeTime;
+  DateTime? _lastSkipTime;
+  JamActionType? _lastSkipType;
+  bool _isDisposed = false;
+  int _localActionSeq = 0;
+
+  // Network robustness: Per-sender monotonic timestamps to drop out-of-order stale packets
+  final Map<String, int> _lastActionTimestamps = {};
+
+  // Network robustness: Action ID deduplication against duplicate/retransmitted packets
+  final Set<String> _processedActionIds = {};
+  final List<String> _recentActionIdOrder = [];
+  static const int _maxProcessedActionHistory = 300;
+
+  bool _hasProcessedAction(String id) => _processedActionIds.contains(id);
+
+  void _recordProcessedAction(String id) {
+    _processedActionIds.add(id);
+    _recentActionIdOrder.add(id);
+    if (_recentActionIdOrder.length > _maxProcessedActionHistory) {
+      final oldest = _recentActionIdOrder.removeAt(0);
+      _processedActionIds.remove(oldest);
+    }
+  }
+
+  String _nextActionId() {
+    return '${_currentUserId}_${DateTime.now().microsecondsSinceEpoch}_${++_localActionSeq}';
+  }
 
   // Active sync timer for guests to guarantee initial state arrival
   Timer? _initialSyncTimer;
   int _syncRequestAttempts = 0;
 
+  // Timer for delayed host failover check if no host was initially observed
+  Timer? _hostFailoverTimer;
+
   // Heartbeat timer for host drift correction
   Timer? _heartbeatTimer;
-  int _pulseCounter = 0;
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];
@@ -63,7 +97,42 @@ class JamController extends ChangeNotifier {
   String? _lastTrackId;
   bool _lastIsPlaying = false;
 
+  bool _isSameTrackId(String? id1, String? id2) {
+    if (id1 == null || id2 == null) return id1 == id2;
+    return TrackSource.stripPrefix(id1) == TrackSource.stripPrefix(id2);
+  }
+
+  bool _isSameQueue(List<Track> q1, List<Track> q2) {
+    if (q1.length != q2.length) return false;
+    for (int i = 0; i < q1.length; i++) {
+      if (!_isSameTrackId(q1[i].id, q2[i].id)) return false;
+    }
+    return true;
+  }
+
+  bool _isUserInitiatedAction(JamActionType type) {
+    switch (type) {
+      case JamActionType.requestSync:
+      case JamActionType.syncState:
+      case JamActionType.syncPulse:
+        return false;
+      case JamActionType.playTrack:
+      case JamActionType.pause:
+      case JamActionType.resume:
+      case JamActionType.skipNext:
+      case JamActionType.skipPrev:
+      case JamActionType.addToQueue:
+      case JamActionType.removeFromQueue:
+      case JamActionType.clearQueue:
+      case JamActionType.setQueue:
+      case JamActionType.seek:
+        return true;
+    }
+  }
+
   JamController(this._jamService, this._playerController, [String? userId]) {
+    _lastTrackId = _playerController.currentTrack?.id;
+    _lastIsPlaying = _playerController.isPlaying;
     _initStreams();
   }
 
@@ -73,29 +142,11 @@ class JamController extends ChangeNotifier {
       _jamService.onAction.listen(_handleRemoteAction),
     );
 
-    // Listen for participant changes & handle host failover
+    // Listen for participant changes & handle host failover / conflict resolution
     _subscriptions.add(
       _jamService.participantsStream.listen((participants) {
         _participants = participants;
-
-        // Auto host failover: If no host exists, oldest participant becomes Host
-        if (_isInJam && participants.isNotEmpty) {
-          final hasHost = participants.any((p) => p.isHost);
-          if (!hasHost) {
-            final sorted = List<JamParticipant>.from(participants)
-              ..sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
-            final oldest = sorted.first;
-
-            if (oldest.id == _currentUserId && !_isHost) {
-              debugPrint('JAM: Host left. Promoting self ($_currentUserId) to Host.');
-              _isHost = true;
-              _jamService.updateHostPresence(true);
-              _startHeartbeat();
-              _sendFullSyncState('all');
-            }
-          }
-        }
-
+        _evaluateHostRoles(participants);
         notifyListeners();
       }),
     );
@@ -114,10 +165,12 @@ class JamController extends ChangeNotifier {
       _jamService.onReconnected.listen((_) {
         debugPrint('JAM: Channel reconnected. Ensuring active session synchronization...');
         if (_isInJam) {
+          _lastActionTimestamps.clear();
           if (_isHost) {
             _sendFullSyncState('all');
           } else {
-            _jamService.requestSync();
+            _hasReceivedInitialSync = false;
+            _startSyncPolling();
           }
         }
       }),
@@ -127,15 +180,98 @@ class JamController extends ChangeNotifier {
     _playerController.addListener(_onPlayerStateChanged);
   }
 
+  void _evaluateHostRoles(List<JamParticipant> participants) {
+    if (!_isInJam || participants.isEmpty) return;
+
+    final hosts = participants.where((p) => p.isHost).toList()
+      ..sort((a, b) {
+        final cmp = a.joinedAt.compareTo(b.joinedAt);
+        if (cmp != 0) return cmp;
+        return a.id.compareTo(b.id);
+      });
+
+    // 1. Conflict resolution: If multiple hosts exist, only the oldest host stays host!
+    if (_isHost && hosts.length > 1) {
+      final oldestHost = hosts.first;
+      if (oldestHost.id != _currentUserId) {
+        debugPrint(
+            'JAM: Multiple hosts detected. Demoting self to guest (oldest host is ${oldestHost.id}).');
+        _isHost = false;
+        _jamService.updateHostPresence(false);
+        _stopHeartbeat();
+        return;
+      }
+    }
+
+    // 2. Remember if we've seen an active host in this session
+    if (hosts.isNotEmpty) {
+      _hasObservedHost = true;
+      _hostFailoverTimer?.cancel();
+      _hostFailoverTimer = null;
+      return;
+    }
+
+    // 3. Auto host failover when hosts.isEmpty:
+    if (!_isHost && hosts.isEmpty) {
+      if (_hasObservedHost) {
+        // We previously observed an active host who has now disconnected: promote oldest immediately!
+        _promoteOldestToHost(participants);
+      } else if (_sessionJoinTime != null) {
+        final elapsed = DateTime.now().difference(_sessionJoinTime!);
+        if (elapsed >= const Duration(seconds: 6)) {
+          _promoteOldestToHost(participants);
+        } else {
+          // Schedule deferred check when the initial 6s join window completes
+          _hostFailoverTimer?.cancel();
+          final remaining = const Duration(seconds: 6) - elapsed;
+          _hostFailoverTimer = Timer(remaining, () {
+            if (_isInJam && !_isHost) {
+              _evaluateHostRoles(_participants);
+              notifyListeners();
+            }
+          });
+        }
+      }
+    }
+  }
+
+  void _promoteOldestToHost(List<JamParticipant> participants) {
+    if (participants.isEmpty) return;
+    final sorted = List<JamParticipant>.from(participants)
+      ..sort((a, b) {
+        final cmp = a.joinedAt.compareTo(b.joinedAt);
+        if (cmp != 0) return cmp;
+        return a.id.compareTo(b.id);
+      });
+    final oldest = sorted.first;
+
+    if (oldest.id == _currentUserId) {
+      debugPrint('JAM: Host left. Promoting self ($_currentUserId) to Host.');
+      _isHost = true;
+      _hasObservedHost = true;
+      _lastTrackId = _playerController.currentTrack?.id;
+      _lastIsPlaying = _playerController.isPlaying;
+      _initialSyncTimer?.cancel();
+      _initialSyncTimer = null;
+      _hostFailoverTimer?.cancel();
+      _hostFailoverTimer = null;
+      _jamService.updateHostPresence(true);
+      _startHeartbeat();
+      _sendFullSyncState('all');
+    }
+  }
+
   void _onPlayerStateChanged() {
-    // CRITICAL: If applying a remote action, suppress broadcast to eliminate echo loops!
-    if (!_isInJam || _isApplyingRemoteAction) return;
+    if (!_isInJam) return;
 
     if (_playerController.isBuffering) {
       _setSyncStatus(JamSyncStatus.buffering);
     } else if (_syncStatus == JamSyncStatus.buffering) {
       _setSyncStatus(JamSyncStatus.synced);
     }
+
+    // Suppress broadcast if a remote or local JamController action is actively mutating the player
+    if (_isApplyingRemoteAction || _isPerformingLocalAction) return;
 
     // ONLY the Host broadcasts natural, unprompted player state changes
     // (such as when a track naturally finishes and advances to the next track)
@@ -147,21 +283,27 @@ class JamController extends ChangeNotifier {
     bool trackChanged = false;
     bool playStateChanged = false;
 
-    if (currentTrack?.id != _lastTrackId) {
+    if (currentTrack != null && !_isSameTrackId(currentTrack.id, _lastTrackId)) {
       trackChanged = true;
-      _lastTrackId = currentTrack?.id;
+      _lastTrackId = currentTrack.id;
       _lastIsPlaying = isPlaying;
-    } else if (isPlaying != _lastIsPlaying) {
+      _lastTrackChangeTime = DateTime.now();
+    } else if (!_playerController.isBuffering && isPlaying != _lastIsPlaying) {
       playStateChanged = true;
       _lastIsPlaying = isPlaying;
     }
 
     if (trackChanged && currentTrack != null) {
       debugPrint('JAM: Host track changed naturally. Broadcasting new track: ${currentTrack.title}');
+      int queueIdx = -1;
+      if (_playerController.queue.isNotEmpty) {
+        queueIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, currentTrack.id));
+      }
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.playTrack,
         track: currentTrack,
+        queueIndex: queueIdx >= 0 ? queueIdx : null,
         positionMs: 0,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         isPlaying: isPlaying,
@@ -170,7 +312,7 @@ class JamController extends ChangeNotifier {
     } else if (playStateChanged) {
       debugPrint('JAM: Host play state changed naturally ($isPlaying). Broadcasting.');
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: isPlaying ? JamActionType.resume : JamActionType.pause,
         track: currentTrack,
         positionMs: _playerController.position.inMilliseconds,
@@ -188,6 +330,10 @@ class JamController extends ChangeNotifier {
     final code = await _jamService.createJam();
     _isInJam = true;
     _isHost = true;
+    _hasObservedHost = true;
+    _sessionJoinTime = DateTime.now();
+    _lastTrackId = _playerController.currentTrack?.id;
+    _lastIsPlaying = _playerController.isPlaying;
     _jamCode = code;
     _startHeartbeat();
     notifyListeners();
@@ -197,16 +343,30 @@ class JamController extends ChangeNotifier {
   /// Joins an existing Jam session by code.
   Future<void> joinJam(String code) async {
     _hasReceivedInitialSync = false;
+    _hasObservedHost = false;
+    _sessionJoinTime = DateTime.now();
+    _lastTrackId = _playerController.currentTrack?.id;
+    _lastIsPlaying = _playerController.isPlaying;
     await _jamService.joinJam(code);
     _isInJam = true;
     _isHost = false;
     _jamCode = code.trim().toUpperCase();
     _stopHeartbeat();
+    if (_participants.any((p) => p.isHost)) {
+      _hasObservedHost = true;
+    }
     notifyListeners();
 
     // Active handshake: Proactively request sync every 1200ms until initial state arrives (up to 5 attempts)
+    _startSyncPolling();
+  }
+
+  void _startSyncPolling() {
     _initialSyncTimer?.cancel();
     _syncRequestAttempts = 0;
+    if (_hasReceivedInitialSync) return;
+    // Immediately fire the first sync request!
+    _jamService.requestSync();
     _initialSyncTimer = Timer.periodic(const Duration(milliseconds: 1200), (timer) {
       if (!_isInJam || _isHost || _hasReceivedInitialSync) {
         timer.cancel();
@@ -230,6 +390,8 @@ class JamController extends ChangeNotifier {
     _stopHeartbeat();
     _initialSyncTimer?.cancel();
     _initialSyncTimer = null;
+    _hostFailoverTimer?.cancel();
+    _hostFailoverTimer = null;
     _syncRequestAttempts = 0;
     await _jamService.leaveJam();
     _isInJam = false;
@@ -238,21 +400,49 @@ class JamController extends ChangeNotifier {
     _participants = [];
     _lastActionBy = null;
     _hasReceivedInitialSync = false;
+    _hasObservedHost = false;
+    _sessionJoinTime = null;
     _actionQueue.clear();
+    _lastActionTimestamps.clear();
+    _processedActionIds.clear();
+    _recentActionIdOrder.clear();
+    _lastSkipTime = null;
+    _lastSkipType = null;
     _isProcessingAction = false;
+    _isApplyingRemoteAction = false;
+    _localActionDepth = 0;
     _syncStatus = JamSyncStatus.synced;
     notifyListeners();
   }
 
   // --- Jam-Aware Player Actions ---
 
+  void _recordLocalUserAction() {
+    if (_isInJam) {
+      _lastActionBy = _findParticipantName(_currentUserId) ?? 'YOU';
+      notifyListeners();
+    }
+  }
+
   /// Play a specific track, broadcasting to all peers if active.
   Future<void> playTrack(Track track) async {
-    await _playerController.playTrack(track);
+    _lastTrackId = track.id;
+    _lastIsPlaying = true;
+    _lastTrackChangeTime = DateTime.now();
+
+    _localActionDepth++;
+    try {
+      await _playerController.playTrack(track);
+      _lastTrackId = track.id;
+      _lastIsPlaying = true;
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.playTrack,
         track: track,
         positionMs: 0,
@@ -290,15 +480,27 @@ class JamController extends ChangeNotifier {
       targetIndex = (initialIndex ?? 0).clamp(0, tracks.length - 1);
     }
 
-    await _playerController.playPlaylist(
-      listToPlay,
-      initialIndex: targetIndex,
-      shuffle: false,
-    );
+    _lastTrackId = listToPlay[targetIndex].id;
+    _lastIsPlaying = true;
+    _lastTrackChangeTime = DateTime.now();
+
+    _localActionDepth++;
+    try {
+      await _playerController.playPlaylist(
+        listToPlay,
+        initialIndex: targetIndex,
+        shuffle: false,
+      );
+      _lastTrackId = listToPlay[targetIndex].id;
+      _lastIsPlaying = true;
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam && listToPlay.isNotEmpty) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.setQueue,
         track: listToPlay[targetIndex],
         queue: listToPlay,
@@ -313,10 +515,23 @@ class JamController extends ChangeNotifier {
 
   /// Play a mix query, broadcasting the resulting playlist.
   Future<bool> playMix(String query) async {
-    final success = await _playerController.playMix(query);
+    _lastTrackChangeTime = DateTime.now();
+    bool success = false;
+    _localActionDepth++;
+    try {
+      success = await _playerController.playMix(query);
+      if (success) {
+        _lastTrackId = _playerController.currentTrack?.id;
+        _lastIsPlaying = _playerController.isPlaying;
+      }
+    } finally {
+      _localActionDepth--;
+    }
+
     if (success && _isInJam && _playerController.queue.isNotEmpty) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.setQueue,
         track: _playerController.currentTrack,
         queue: _playerController.queue,
@@ -330,14 +545,55 @@ class JamController extends ChangeNotifier {
     return success;
   }
 
+  /// Skip to a specific item in the current queue, broadcasting to all peers.
+  Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= _playerController.queue.length) return;
+    final track = _playerController.queue[index];
+    _lastTrackId = track.id;
+    _lastIsPlaying = true;
+    _lastTrackChangeTime = DateTime.now();
+
+    _localActionDepth++;
+    try {
+      await _playerController.skipToQueueItem(index);
+      _lastTrackId = track.id;
+      _lastIsPlaying = true;
+    } finally {
+      _localActionDepth--;
+    }
+
+    if (_isInJam) {
+      _recordLocalUserAction();
+      _broadcastAction(JamAction(
+        id: _nextActionId(),
+        type: JamActionType.setQueue,
+        track: track,
+        queue: _playerController.queue,
+        queueIndex: index,
+        positionMs: 0,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        isPlaying: true,
+        senderId: _currentUserId,
+      ));
+    }
+  }
+
   /// Pause playback, broadcasting exact position and timestamp.
   Future<void> pause() async {
     final pos = _playerController.position.inMilliseconds;
-    await _playerController.pause();
+    _lastIsPlaying = false;
+    _localActionDepth++;
+    try {
+      await _playerController.pause();
+      _lastIsPlaying = false;
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.pause,
         track: _playerController.currentTrack,
         positionMs: pos,
@@ -351,11 +607,19 @@ class JamController extends ChangeNotifier {
   /// Resume playback, broadcasting exact position and timestamp.
   Future<void> resume() async {
     final pos = _playerController.position.inMilliseconds;
-    await _playerController.resume();
+    _lastIsPlaying = true;
+    _localActionDepth++;
+    try {
+      await _playerController.resume();
+      _lastIsPlaying = true;
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.resume,
         track: _playerController.currentTrack,
         positionMs: pos,
@@ -377,12 +641,47 @@ class JamController extends ChangeNotifier {
 
   /// Skip to next track.
   Future<void> skipToNext() async {
-    await _playerController.skipToNext();
+    _lastSkipTime = DateTime.now();
+    _lastSkipType = JamActionType.skipNext;
+    _lastTrackChangeTime = DateTime.now();
+    final queue = _playerController.queue;
+    final current = _playerController.currentTrack;
+    Track? nextTrack;
+    int? nextIdx;
 
-    if (_isInJam) {
+    if (queue.isNotEmpty && current != null) {
+      final currentIdx = queue.indexWhere((t) => _isSameTrackId(t.id, current.id));
+      if (currentIdx != -1 && currentIdx + 1 < queue.length) {
+        nextIdx = currentIdx + 1;
+        nextTrack = queue[nextIdx];
+        _lastTrackId = nextTrack.id;
+      } else if (currentIdx != -1 && currentIdx + 1 >= queue.length) {
+        // Already at the end of the queue; nothing to skip to.
+        return;
+      }
+    }
+
+    _localActionDepth++;
+    try {
+      await _playerController.skipToNext();
+      if (nextTrack != null) {
+        _lastTrackId = nextTrack.id;
+      } else if (!_isSameTrackId(_playerController.currentTrack?.id, current?.id)) {
+        nextTrack = _playerController.currentTrack;
+        _lastTrackId = nextTrack?.id;
+      }
+      _lastIsPlaying = _playerController.isPlaying;
+    } finally {
+      _localActionDepth--;
+    }
+
+    if (_isInJam && (nextTrack != null || queue.isEmpty)) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.skipNext,
+        track: nextTrack,
+        queueIndex: nextIdx,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         senderId: _currentUserId,
       ));
@@ -391,12 +690,48 @@ class JamController extends ChangeNotifier {
 
   /// Skip to previous track.
   Future<void> skipToPrevious() async {
-    await _playerController.skipToPrevious();
+    _lastSkipTime = DateTime.now();
+    _lastSkipType = JamActionType.skipPrev;
+    _lastTrackChangeTime = DateTime.now();
+    final queue = _playerController.queue;
+    final current = _playerController.currentTrack;
+    Track? prevTrack;
+    int? prevIdx;
 
-    if (_isInJam) {
+    if (queue.isNotEmpty && current != null) {
+      final currentIdx = queue.indexWhere((t) => _isSameTrackId(t.id, current.id));
+      if (currentIdx > 0) {
+        prevIdx = currentIdx - 1;
+        prevTrack = queue[prevIdx];
+        _lastTrackId = prevTrack.id;
+      } else if (currentIdx == 0) {
+        // At track 0: restart track at 0:00
+        await seek(Duration.zero);
+        return;
+      }
+    }
+
+    _localActionDepth++;
+    try {
+      await _playerController.skipToPrevious();
+      if (prevTrack != null) {
+        _lastTrackId = prevTrack.id;
+      } else if (!_isSameTrackId(_playerController.currentTrack?.id, current?.id)) {
+        prevTrack = _playerController.currentTrack;
+        _lastTrackId = prevTrack?.id;
+      }
+      _lastIsPlaying = _playerController.isPlaying;
+    } finally {
+      _localActionDepth--;
+    }
+
+    if (_isInJam && (prevTrack != null || queue.isEmpty)) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.skipPrev,
+        track: prevTrack,
+        queueIndex: prevIdx,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         senderId: _currentUserId,
       ));
@@ -405,11 +740,17 @@ class JamController extends ChangeNotifier {
 
   /// Add a track to the queue, broadcasting to all peers.
   Future<void> addToQueue(Track track) async {
-    await _playerController.addToQueue(track);
+    _localActionDepth++;
+    try {
+      await _playerController.addToQueue(track);
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.addToQueue,
         track: track,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
@@ -420,12 +761,21 @@ class JamController extends ChangeNotifier {
 
   /// Remove a track from the queue by index.
   Future<void> removeFromQueue(int index) async {
-    await _playerController.removeFromQueue(index);
+    if (index < 0 || index >= _playerController.queue.length) return;
+    final track = _playerController.queue[index];
+    _localActionDepth++;
+    try {
+      await _playerController.removeFromQueue(index);
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.removeFromQueue,
+        track: track,
         queueIndex: index,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         senderId: _currentUserId,
@@ -433,17 +783,55 @@ class JamController extends ChangeNotifier {
     }
   }
 
-  /// Shuffle the queue, broadcasting the new queue order.
+  /// Clears the entire shared queue and stops playback.
+  Future<void> clearQueue() async {
+    _lastTrackId = null;
+    _lastIsPlaying = false;
+    _localActionDepth++;
+    try {
+      await _playerController.clearQueue();
+    } finally {
+      _localActionDepth--;
+    }
+
+    if (_isInJam) {
+      _recordLocalUserAction();
+      _broadcastAction(JamAction(
+        id: _nextActionId(),
+        type: JamActionType.clearQueue,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        senderId: _currentUserId,
+      ));
+    }
+  }
+
+  /// Shuffle the queue, broadcasting the new queue order while preserving the active track.
   Future<void> shuffleQueue() async {
-    await _playerController.shuffleQueue();
+    _localActionDepth++;
+    try {
+      await _playerController.shuffleQueue();
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam && _playerController.queue.isNotEmpty) {
+      _recordLocalUserAction();
+      final current = _playerController.currentTrack;
+      int currentIdx = 0;
+      if (current != null) {
+        final foundIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, current.id));
+        if (foundIdx != -1) {
+          currentIdx = foundIdx;
+        }
+      }
+      _lastTrackId = current?.id;
+      _lastIsPlaying = _playerController.isPlaying;
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.setQueue,
-        track: _playerController.currentTrack,
+        track: current ?? _playerController.queue[currentIdx],
         queue: _playerController.queue,
-        queueIndex: 0,
+        queueIndex: currentIdx,
         positionMs: _playerController.position.inMilliseconds,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         isPlaying: _playerController.isPlaying,
@@ -454,11 +842,17 @@ class JamController extends ChangeNotifier {
 
   /// Seek to position, broadcasting to all peers with timestamp.
   Future<void> seek(Duration position) async {
-    await _playerController.seek(position);
+    _localActionDepth++;
+    try {
+      await _playerController.seek(position);
+    } finally {
+      _localActionDepth--;
+    }
 
     if (_isInJam) {
+      _recordLocalUserAction();
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.seek,
         track: _playerController.currentTrack,
         positionMs: position.inMilliseconds,
@@ -473,20 +867,23 @@ class JamController extends ChangeNotifier {
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
-    _pulseCounter = 0;
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!_isHost || !_isInJam) return;
       if (_playerController.currentTrack == null && _playerController.queue.isEmpty) return;
 
-      _pulseCounter++;
-      // Every 6th pulse (30 seconds), broadcast full syncState to maintain total queue parity
-      if (_pulseCounter % 6 == 0) {
-        _sendFullSyncState('all');
+      // Do NOT send pulse if Host is actively applying an action or buffering
+      if (_isApplyingRemoteAction || _isPerformingLocalAction || _playerController.isBuffering) {
+        return;
+      }
+
+      // Do NOT send pulse if Host recently changed track (give 5s quiet grace period to stabilize)
+      if (_lastTrackChangeTime != null &&
+          DateTime.now().difference(_lastTrackChangeTime!) < const Duration(seconds: 5)) {
         return;
       }
 
       _broadcastAction(JamAction(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+        id: _nextActionId(),
         type: JamActionType.syncPulse,
         track: _playerController.currentTrack,
         positionMs: _playerController.position.inMilliseconds,
@@ -500,7 +897,6 @@ class JamController extends ChangeNotifier {
   void _stopHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-    _pulseCounter = 0;
   }
 
   void _setSyncStatus(JamSyncStatus status) {
@@ -513,9 +909,101 @@ class JamController extends ChangeNotifier {
   Future<void> _handleRemoteAction(JamAction action) async {
     if (action.senderId == _currentUserId) return; // Prevent self-echo
 
-    // If currently processing a state change, drop periodic syncPulses to avoid interrupting loading
-    if (_isProcessingAction && action.type == JamActionType.syncPulse) {
+    // 1. Packet deduplication: Drop identical network packets re-delivered by the channel
+    if (_hasProcessedAction(action.id)) {
+      debugPrint('JAM: Dropping duplicate action ${action.id} (${action.type.name})');
       return;
+    }
+    _recordProcessedAction(action.id);
+
+    // 2. Out-of-order packet drop: Ensure monotonic timestamps per sender for playback mutations
+    final isPlaybackMutation = action.type == JamActionType.playTrack ||
+        action.type == JamActionType.pause ||
+        action.type == JamActionType.resume ||
+        action.type == JamActionType.seek ||
+        action.type == JamActionType.skipNext ||
+        action.type == JamActionType.skipPrev ||
+        action.type == JamActionType.setQueue ||
+        action.type == JamActionType.syncPulse ||
+        action.type == JamActionType.syncState;
+
+    if (isPlaybackMutation && action.timestampMs != null) {
+      final lastSenderTs = _lastActionTimestamps[action.senderId];
+      if (lastSenderTs != null && action.timestampMs! < lastSenderTs) {
+        debugPrint(
+            'JAM: Dropping out-of-order action ${action.type.name} from ${action.senderId} (ts ${action.timestampMs} < lastTs $lastSenderTs)');
+        return;
+      }
+      _lastActionTimestamps[action.senderId] = action.timestampMs!;
+    }
+
+    // 3. Race condition window: Drop near-simultaneous identical-direction skip actions within 700ms
+    if (action.type == JamActionType.skipNext ||
+        action.type == JamActionType.skipPrev) {
+      if (_lastSkipTime != null &&
+          _lastSkipType == action.type &&
+          DateTime.now().difference(_lastSkipTime!) < const Duration(milliseconds: 700)) {
+        debugPrint(
+            'JAM: Dropping near-simultaneous ${action.type.name} from ${action.senderId} (occurred within 700ms of last skip).');
+        return;
+      }
+      _lastSkipTime = DateTime.now();
+      _lastSkipType = action.type;
+    }
+
+    // 4. Drop redundant syncPulses if queue already has actions, if action is applying, or if track changed recently
+    if (action.type == JamActionType.syncPulse) {
+      if (_isProcessingAction || _actionQueue.isNotEmpty || _isApplyingRemoteAction || _isPerformingLocalAction) {
+        return;
+      }
+      final needsQueueRecovery =
+          (_playerController.queue.isEmpty || !_hasReceivedInitialSync) &&
+          action.track != null;
+      if (!needsQueueRecovery &&
+          _lastTrackChangeTime != null &&
+          DateTime.now().difference(_lastTrackChangeTime!) < const Duration(seconds: 5)) {
+        return;
+      }
+    }
+
+    // 5. Coalesce action queue (handling rapid slider scrubbing, duplicate play/pause, obsolete pulses):
+    if (action.type == JamActionType.seek) {
+      _actionQueue.removeWhere((a) => a.type == JamActionType.seek);
+    } else if (action.type == JamActionType.pause || action.type == JamActionType.resume) {
+      _actionQueue.removeWhere((a) => a.type == JamActionType.pause || a.type == JamActionType.resume);
+    } else if (action.type == JamActionType.syncState) {
+      _actionQueue.removeWhere((a) =>
+          a.type == JamActionType.syncState ||
+          a.type == JamActionType.syncPulse);
+    } else if (action.type == JamActionType.clearQueue) {
+      _actionQueue.removeWhere((a) =>
+          a.type == JamActionType.setQueue ||
+          a.type == JamActionType.playTrack ||
+          a.type == JamActionType.syncState ||
+          a.type == JamActionType.syncPulse ||
+          a.type == JamActionType.seek ||
+          a.type == JamActionType.pause ||
+          a.type == JamActionType.resume ||
+          a.type == JamActionType.addToQueue ||
+          a.type == JamActionType.removeFromQueue);
+    } else if (action.type == JamActionType.setQueue) {
+      _actionQueue.removeWhere((a) =>
+          a.type == JamActionType.setQueue ||
+          a.type == JamActionType.playTrack ||
+          a.type == JamActionType.syncState ||
+          a.type == JamActionType.syncPulse ||
+          a.type == JamActionType.seek ||
+          a.type == JamActionType.pause ||
+          a.type == JamActionType.resume);
+    } else if (action.type == JamActionType.playTrack ||
+        action.type == JamActionType.skipNext ||
+        action.type == JamActionType.skipPrev) {
+      _actionQueue.removeWhere((a) =>
+          a.type == JamActionType.syncPulse ||
+          a.type == JamActionType.seek ||
+          a.type == JamActionType.pause ||
+          a.type == JamActionType.resume ||
+          (a.type == JamActionType.syncState && (a.queue == null || a.queue!.isEmpty)));
     }
 
     _actionQueue.add(action);
@@ -530,47 +1018,95 @@ class JamController extends ChangeNotifier {
     _isProcessingAction = false;
   }
 
+  int _clampPositionToTrack(int targetMs, Track? track) {
+    if (targetMs < 0) return 0;
+    final durMs = track?.duration.inMilliseconds ??
+        _playerController.duration.inMilliseconds;
+    if (durMs > 0 && targetMs > durMs) {
+      return durMs;
+    }
+    return targetMs;
+  }
+
   Future<void> _executeRemoteAction(JamAction action) async {
     debugPrint('JAM: Handling remote action: ${action.type.name} from ${action.senderId}');
+
+    // requestSync is purely informational and doesn't mutate player state
+    if (action.type == JamActionType.requestSync) {
+      if (_isHost) {
+        _sendFullSyncState(action.senderId);
+      }
+      return;
+    }
+
     _isApplyingRemoteAction = true;
-    _setSyncStatus(JamSyncStatus.syncing);
-    _lastActionBy = _findParticipantName(action.senderId);
-    notifyListeners();
+    final isUserAction = _isUserInitiatedAction(action.type);
+    if (isUserAction) {
+      _lastActionBy = _findParticipantName(action.senderId) ?? action.senderId;
+    }
+    if (action.type != JamActionType.syncPulse) {
+      _setSyncStatus(JamSyncStatus.syncing);
+    } else if (isUserAction) {
+      notifyListeners();
+    }
 
     try {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final latency = action.timestampMs != null
-          ? (now - action.timestampMs!).clamp(0, 5000)
+      final receiveTimeMs = DateTime.now().millisecondsSinceEpoch;
+      // Clamp network transit latency to [0, 1500]ms to prevent cross-device wall-clock skew
+      // from introducing artificial multi-second jumps, while measuring local load time separately.
+      final networkLatency = action.timestampMs != null
+          ? (receiveTimeMs - action.timestampMs!).clamp(0, 1500)
           : 0;
 
       switch (action.type) {
         case JamActionType.requestSync:
-          if (_isHost) {
-            _sendFullSyncState(action.senderId);
-          }
           break;
 
         case JamActionType.syncState:
-          await _applySyncState(action, latency);
+          await _applySyncState(action, networkLatency);
           break;
 
         case JamActionType.syncPulse:
           if (!_isHost) {
-            await _applySyncPulse(action, latency);
+            await _applySyncPulse(action, networkLatency);
           }
           break;
 
         case JamActionType.playTrack:
           if (action.track != null) {
             debugPrint('JAM: Remote playTrack ${action.track!.title}');
-            final targetPosition =
-                (action.positionMs ?? 0) + (action.isPlaying == true ? latency : 0);
-            if (_playerController.currentTrack?.id != action.track!.id) {
-              await _playerController.playTrack(action.track!);
+            _lastTrackId = action.track!.id;
+            _lastIsPlaying = action.isPlaying ?? true;
+            _lastTrackChangeTime = DateTime.now();
+
+            final loadStartMs = DateTime.now().millisecondsSinceEpoch;
+            if (!_isSameTrackId(_playerController.currentTrack?.id, action.track!.id)) {
+              // If the track is already in queue, skip to it to preserve queue
+              final qIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, action.track!.id));
+              if (qIdx != -1) {
+                await _playerController.skipToQueueItem(qIdx);
+              } else {
+                await _playerController.playTrack(
+                  action.track!,
+                  autoPlay: action.isPlaying ?? true,
+                );
+              }
             } else if (!_playerController.isPlaying && action.isPlaying == true) {
               await _playerController.resume();
             }
-            if (targetPosition > 300 && _playerController.currentTrack != null) {
+
+            if (action.isPlaying == false && _playerController.isPlaying) {
+              await _playerController.pause();
+            }
+
+            final loadElapsedMs = (DateTime.now().millisecondsSinceEpoch - loadStartMs).clamp(0, 10000);
+            // Only seek if starting far into the track (> 3s), never on initial track start
+            final pos = action.positionMs ?? 0;
+            if (pos > 3000 && _playerController.currentTrack != null) {
+              final targetPosition = _clampPositionToTrack(
+                pos + (action.isPlaying == true ? networkLatency + loadElapsedMs : 0),
+                action.track,
+              );
               await _playerController.seek(Duration(milliseconds: targetPosition));
             }
           }
@@ -578,51 +1114,134 @@ class JamController extends ChangeNotifier {
 
         case JamActionType.pause:
           debugPrint('JAM: Remote pause');
+          _lastIsPlaying = false;
           await _playerController.pause();
           if (action.track != null &&
-              _playerController.currentTrack?.id != action.track!.id) {
+              !_isSameTrackId(_playerController.currentTrack?.id, action.track!.id)) {
+            _lastTrackId = action.track!.id;
             await _playerController.playTrack(action.track!, autoPlay: false);
           }
           if (action.positionMs != null && _playerController.currentTrack != null) {
-            await _playerController.seek(Duration(milliseconds: action.positionMs!));
+            final drift = (_playerController.position.inMilliseconds - action.positionMs!).abs();
+            if (drift > 2000) {
+              final targetPos = _clampPositionToTrack(action.positionMs!, action.track);
+              await _playerController.seek(Duration(milliseconds: targetPos));
+            }
           }
           break;
 
         case JamActionType.resume:
           debugPrint('JAM: Remote resume');
-          final targetPosition =
-              (action.positionMs ?? _playerController.position.inMilliseconds) + latency;
+          _lastIsPlaying = true;
+          final loadStartMs = DateTime.now().millisecondsSinceEpoch;
           if (action.track != null &&
-              _playerController.currentTrack?.id != action.track!.id) {
+              !_isSameTrackId(_playerController.currentTrack?.id, action.track!.id)) {
+            _lastTrackId = action.track!.id;
+            _lastTrackChangeTime = DateTime.now();
             await _playerController.playTrack(action.track!);
           } else {
             await _playerController.resume();
           }
-          if (targetPosition > 300 && _playerController.currentTrack != null) {
-            await _playerController.seek(Duration(milliseconds: targetPosition));
+          final loadElapsedMs = (DateTime.now().millisecondsSinceEpoch - loadStartMs).clamp(0, 10000);
+          if (action.positionMs != null && _playerController.currentTrack != null) {
+            final targetPosition = _clampPositionToTrack(
+              action.positionMs! + networkLatency + loadElapsedMs,
+              action.track,
+            );
+            final drift = (_playerController.position.inMilliseconds - targetPosition).abs();
+            if (drift > 3000) {
+              await _playerController.seek(Duration(milliseconds: targetPosition));
+            }
           }
           break;
 
         case JamActionType.skipNext:
-          await _playerController.skipToNext();
+          debugPrint('JAM: Remote skipNext');
+          _lastTrackChangeTime = DateTime.now();
+          if (action.track != null) {
+            final qIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, action.track!.id));
+            if (qIdx != -1) {
+              await _playerController.skipToQueueItem(qIdx);
+            } else {
+              await _playerController.playTrack(action.track!);
+            }
+          } else if (action.queueIndex != null &&
+              action.queueIndex! >= 0 &&
+              action.queueIndex! < _playerController.queue.length) {
+            await _playerController.skipToQueueItem(action.queueIndex!);
+          } else {
+            await _playerController.skipToNext();
+          }
+          _lastTrackId = _playerController.currentTrack?.id;
+          _lastIsPlaying = _playerController.isPlaying;
           break;
 
         case JamActionType.skipPrev:
-          await _playerController.skipToPrevious();
+          debugPrint('JAM: Remote skipPrev');
+          _lastTrackChangeTime = DateTime.now();
+          if (action.track != null) {
+            final qIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, action.track!.id));
+            if (qIdx != -1) {
+              await _playerController.skipToQueueItem(qIdx);
+            } else {
+              await _playerController.playTrack(action.track!);
+            }
+          } else if (action.queueIndex != null &&
+              action.queueIndex! >= 0 &&
+              action.queueIndex! < _playerController.queue.length) {
+            await _playerController.skipToQueueItem(action.queueIndex!);
+          } else {
+            await _playerController.skipToPrevious();
+          }
+          _lastTrackId = _playerController.currentTrack?.id;
+          _lastIsPlaying = _playerController.isPlaying;
           break;
 
         case JamActionType.setQueue:
           if (action.queue != null && action.queue!.isNotEmpty) {
             debugPrint('JAM: Remote setQueue with ${action.queue!.length} tracks');
-            final initialIdx = action.queueIndex ?? 0;
-            await _playerController.playPlaylist(
-              action.queue!,
-              initialIndex: initialIdx,
-            );
-            final targetPosition =
-                (action.positionMs ?? 0) + (action.isPlaying == true ? latency : 0);
-            if (targetPosition > 300 && _playerController.currentTrack != null) {
-              await _playerController.seek(Duration(milliseconds: targetPosition));
+            final initialIdx = (action.queueIndex ?? 0).clamp(0, action.queue!.length - 1);
+            final targetTrack = action.queue![initialIdx];
+            final isSameActiveTrack = _isSameTrackId(_playerController.currentTrack?.id, targetTrack.id);
+            final pos = action.positionMs ?? 0;
+
+            _lastTrackId = targetTrack.id;
+            _lastIsPlaying = action.isPlaying ?? true;
+            _lastTrackChangeTime = DateTime.now();
+
+            // If we are already playing this exact track mid-song (e.g. queue shuffle),
+            // update the queue order without restarting the current audio stream!
+            if (isSameActiveTrack && pos > 0) {
+              await _playerController.updateQueuePreservingCurrent(
+                action.queue!,
+                currentIndex: initialIdx,
+              );
+              if (action.isPlaying == false && _playerController.isPlaying) {
+                await _playerController.pause();
+              } else if (action.isPlaying == true && !_playerController.isPlaying) {
+                await _playerController.resume();
+              }
+            } else {
+              final loadStartMs = DateTime.now().millisecondsSinceEpoch;
+              await _playerController.playPlaylist(
+                action.queue!,
+                initialIndex: initialIdx,
+                autoPlay: action.isPlaying ?? true,
+              );
+              final loadElapsedMs = (DateTime.now().millisecondsSinceEpoch - loadStartMs).clamp(0, 10000);
+
+              if (action.isPlaying == false && _playerController.isPlaying) {
+                await _playerController.pause();
+              }
+
+              // Only seek if starting far into the track (> 3s), never on initial queue start
+              if (pos > 3000 && _playerController.currentTrack != null) {
+                final targetPosition = _clampPositionToTrack(
+                  pos + (action.isPlaying == true ? networkLatency + loadElapsedMs : 0),
+                  targetTrack,
+                );
+                await _playerController.seek(Duration(milliseconds: targetPosition));
+              }
             }
           }
           break;
@@ -635,24 +1254,54 @@ class JamController extends ChangeNotifier {
           break;
 
         case JamActionType.removeFromQueue:
-          if (action.queueIndex != null) {
-            debugPrint('JAM: Remote removeFromQueue at ${action.queueIndex}');
-            await _playerController.removeFromQueue(action.queueIndex!);
+          final q = _playerController.queue;
+          final idx = action.queueIndex;
+          // 1. If queueIndex is in bounds and matches action.track, remove that exact index (supports duplicate tracks)
+          if (idx != null && idx >= 0 && idx < q.length) {
+            if (action.track == null || _isSameTrackId(q[idx].id, action.track!.id)) {
+              debugPrint('JAM: Remote removeFromQueue at exact index $idx');
+              await _playerController.removeFromQueue(idx);
+              break;
+            }
+          }
+          // 2. Fallback: Content-based removal when concurrent edits shifted the index
+          if (action.track != null) {
+            final actualIdx = q.indexWhere((t) => _isSameTrackId(t.id, action.track!.id));
+            if (actualIdx != -1) {
+              debugPrint('JAM: Remote removeFromQueue by track ID (${action.track!.title}) at index $actualIdx');
+              await _playerController.removeFromQueue(actualIdx);
+              break;
+            }
+          }
+          // 3. Final fallback by index if track wasn't provided
+          if (idx != null && idx >= 0 && idx < q.length) {
+            debugPrint('JAM: Remote removeFromQueue by index at $idx');
+            await _playerController.removeFromQueue(idx);
           }
           break;
 
         case JamActionType.clearQueue:
-          // Local clear if needed
+          debugPrint('JAM: Remote clearQueue');
+          _lastTrackId = null;
+          _lastIsPlaying = false;
+          await _playerController.clearQueue();
           break;
 
         case JamActionType.seek:
+          final loadStartMs = DateTime.now().millisecondsSinceEpoch;
           if (action.track != null &&
-              _playerController.currentTrack?.id != action.track!.id) {
+              !_isSameTrackId(_playerController.currentTrack?.id, action.track!.id)) {
+            _lastTrackId = action.track!.id;
+            _lastTrackChangeTime = DateTime.now();
             await _playerController.playTrack(action.track!, autoPlay: action.isPlaying ?? true);
           }
+          final loadElapsedMs = (DateTime.now().millisecondsSinceEpoch - loadStartMs).clamp(0, 10000);
           if (action.positionMs != null && _playerController.currentTrack != null) {
-            final targetPosition =
-                action.positionMs! + (_playerController.isPlaying ? latency : 0);
+            final seekLatency = (networkLatency + loadElapsedMs).clamp(0, 1500);
+            final targetPosition = _clampPositionToTrack(
+              action.positionMs! + (_playerController.isPlaying ? seekLatency : 0),
+              action.track,
+            );
             debugPrint('JAM: Remote seek to $targetPosition ms');
             await _playerController.seek(Duration(milliseconds: targetPosition));
           }
@@ -661,28 +1310,44 @@ class JamController extends ChangeNotifier {
     } catch (e) {
       debugPrint('JAM: Error processing remote action ${action.type.name}: $e');
     } finally {
-      // Delay releasing guard slightly to absorb any synchronous listener updates
-      await Future.delayed(const Duration(milliseconds: 250));
-      _isApplyingRemoteAction = false;
-      _setSyncStatus(JamSyncStatus.synced);
+      _lastTrackId ??= _playerController.currentTrack?.id;
+      if (_actionQueue.isEmpty) {
+        await Future<void>.delayed(Duration.zero);
+        if (_actionQueue.isEmpty) {
+          _isApplyingRemoteAction = false;
+          _setSyncStatus(JamSyncStatus.synced);
+        }
+      }
     }
   }
 
-  Future<void> _applySyncState(JamAction action, int latency) async {
+  Future<void> _applySyncState(JamAction action, int networkLatency) async {
     debugPrint('JAM: Applying full syncState. isPlaying: ${action.isPlaying}');
     _hasReceivedInitialSync = true;
     _initialSyncTimer?.cancel();
     _initialSyncTimer = null;
 
-    final current = _playerController.currentTrack;
-    final isSameTrack = action.track != null && current?.id == action.track!.id;
+    if (action.track == null && (action.queue == null || action.queue!.isEmpty)) {
+      return;
+    }
 
+    final current = _playerController.currentTrack;
+    final isSameTrack = action.track != null && _isSameTrackId(current?.id, action.track!.id);
+    final hasQueue = action.queue != null && action.queue!.isNotEmpty;
+    final initialIdx = hasQueue
+        ? (action.queueIndex ?? 0).clamp(0, action.queue!.length - 1)
+        : 0;
+
+    final loadStartMs = DateTime.now().millisecondsSinceEpoch;
     if (!isSameTrack) {
-      if (action.queue != null && action.queue!.isNotEmpty) {
-        final initialIdx = action.queueIndex ?? 0;
+      _lastTrackId = action.track?.id ?? (hasQueue ? action.queue![initialIdx].id : null);
+      _lastIsPlaying = action.isPlaying ?? true;
+      _lastTrackChangeTime = DateTime.now();
+      if (hasQueue) {
         await _playerController.playPlaylist(
           action.queue!,
           initialIndex: initialIdx,
+          autoPlay: action.isPlaying ?? true,
         );
       } else if (action.track != null) {
         await _playerController.playTrack(
@@ -690,42 +1355,94 @@ class JamController extends ChangeNotifier {
           autoPlay: action.isPlaying ?? true,
         );
       }
+    } else if (hasQueue && !_isSameQueue(_playerController.queue, action.queue!)) {
+      // Same track is already playing, but the queue differs: update queue without restarting track!
+      await _playerController.updateQueuePreservingCurrent(
+        action.queue!,
+        currentIndex: initialIdx,
+      );
     }
+    final loadElapsedMs = (DateTime.now().millisecondsSinceEpoch - loadStartMs).clamp(0, 10000);
 
     if (action.isPlaying == false) {
+      _lastIsPlaying = false;
       await _playerController.pause();
     } else if (action.isPlaying == true && !_playerController.isPlaying) {
+      _lastIsPlaying = true;
       await _playerController.resume();
     }
 
     if (action.positionMs != null && _playerController.currentTrack != null) {
-      final targetPos =
-          action.positionMs! + (action.isPlaying == true ? latency : 0);
-      await _playerController.seek(Duration(milliseconds: targetPos));
+      final targetPos = _clampPositionToTrack(
+        action.positionMs! + (action.isPlaying == true ? networkLatency + loadElapsedMs : 0),
+        action.track,
+      );
+      final currentPos = _playerController.position.inMilliseconds;
+      final drift = (currentPos - targetPos).abs();
+
+      // Seek if drift is large (> 3s) or if a new track was loaded well into playback (> 3s)
+      if (drift > 3000 || (!isSameTrack && targetPos > 3000)) {
+        await _playerController.seek(Duration(milliseconds: targetPos));
+      }
     }
   }
 
-  Future<void> _applySyncPulse(JamAction action, int latency) async {
+  Future<void> _applySyncPulse(JamAction action, int networkLatency) async {
     // 0. If local player is currently buffering or loading media, do NOT seek or disturb buffer!
     if (_playerController.isBuffering) {
       debugPrint('JAM: syncPulse ignored because player is currently buffering/loading.');
       return;
     }
 
-    // 1. Verify Track Match
-    if (action.track != null &&
-        _playerController.currentTrack?.id != action.track!.id) {
-      debugPrint('JAM: Desync in track during syncPulse. Loading ${action.track!.title}');
-      await _playerController.playTrack(
-        action.track!,
-        autoPlay: action.isPlaying ?? true,
-      );
+    // 1. Queue recovery: If guest has empty queue or hasn't received initial sync, request full sync
+    if ((_playerController.queue.isEmpty || !_hasReceivedInitialSync) && action.track != null) {
+      debugPrint('JAM: syncPulse received while queue uninitialized. Requesting full sync...');
+      _jamService.requestSync();
     }
 
-    // 2. Queue recovery: If guest has empty queue but host is playing, request full sync
-    if ((_playerController.queue.isEmpty || !_hasReceivedInitialSync) && action.track != null) {
-      debugPrint('JAM: syncPulse received but queue is empty or not initialized. Requesting full sync...');
-      _jamService.requestSync();
+    // 0.1 If local track was recently changed and already matches pulse track, ignore pulses of previous state
+    if (_lastTrackChangeTime != null &&
+        DateTime.now().difference(_lastTrackChangeTime!) < const Duration(seconds: 5) &&
+        _playerController.currentTrack != null &&
+        _isSameTrackId(_playerController.currentTrack?.id, action.track?.id)) {
+      debugPrint('JAM: syncPulse ignored because local track change was recent.');
+      return;
+    }
+
+    // 2. Verify Track Match
+    if (action.track != null &&
+        !_isSameTrackId(_playerController.currentTrack?.id, action.track!.id)) {
+      debugPrint('JAM: Desync in track during syncPulse. Loading ${action.track!.title}');
+      _setSyncStatus(JamSyncStatus.syncing);
+      _lastTrackId = action.track!.id;
+      _lastTrackChangeTime = DateTime.now();
+
+      final loadStartMs = DateTime.now().millisecondsSinceEpoch;
+      final qIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, action.track!.id));
+      if (qIdx != -1) {
+        await _playerController.skipToQueueItem(qIdx);
+      } else {
+        // Track wasn't in our local queue: play it and ask Host for the full queue
+        await _playerController.playTrack(
+          action.track!,
+          autoPlay: action.isPlaying ?? true,
+        );
+        _jamService.requestSync();
+      }
+      final loadElapsedMs = (DateTime.now().millisecondsSinceEpoch - loadStartMs).clamp(0, 10000);
+
+      if (action.isPlaying == false && _playerController.isPlaying) {
+        await _playerController.pause();
+      }
+
+      if ((action.positionMs ?? 0) > 3000 && _playerController.currentTrack != null) {
+        final targetPos = _clampPositionToTrack(
+          action.positionMs! + (action.isPlaying == true ? networkLatency + loadElapsedMs : 0),
+          action.track,
+        );
+        await _playerController.seek(Duration(milliseconds: targetPos));
+      }
+      return;
     }
 
     // 3. Verify Play State
@@ -733,19 +1450,28 @@ class JamController extends ChangeNotifier {
       if (action.isPlaying! &&
           !_playerController.isPlaying &&
           !_playerController.isBuffering) {
+        _lastIsPlaying = true;
         await _playerController.resume();
       } else if (!action.isPlaying! && _playerController.isPlaying) {
+        _lastIsPlaying = false;
         await _playerController.pause();
       }
     }
 
-    // 4. Drift Compensation with 1200ms threshold
+    // 4. Drift Compensation (3000ms threshold, only after initial 6 seconds of playback)
     if (action.positionMs != null && action.isPlaying == true && _playerController.currentTrack != null) {
-      final expectedPos = action.positionMs! + latency;
       final currentPos = _playerController.position.inMilliseconds;
+      if (currentPos < 6000) {
+        return; // Allow playback to settle smoothly without seeking in early seconds
+      }
+
+      final expectedPos = _clampPositionToTrack(
+        action.positionMs! + networkLatency,
+        action.track,
+      );
       final drift = (currentPos - expectedPos).abs();
 
-      if (drift > 1200) {
+      if (drift > 3000) {
         debugPrint('JAM: Significant drift detected (${drift}ms). Seeking to $expectedPos ms...');
         _setSyncStatus(JamSyncStatus.syncing);
         await _playerController.seek(Duration(milliseconds: expectedPos));
@@ -772,19 +1498,20 @@ class JamController extends ChangeNotifier {
   String get _currentUserId => _jamService.myUserId;
 
   void _sendFullSyncState(String targetId) {
-    if (_playerController.currentTrack == null && _playerController.queue.isEmpty) return;
+    final isIdle = _playerController.currentTrack == null && _playerController.queue.isEmpty;
+    if (isIdle && targetId == 'all') return;
     debugPrint('JAM: Sending full sync state to $targetId');
 
     final currentQueue = _playerController.queue;
     final currentTrack = _playerController.currentTrack ?? (currentQueue.isNotEmpty ? currentQueue.first : null);
     int queueIndex = 0;
     if (currentTrack != null && currentQueue.isNotEmpty) {
-      queueIndex = currentQueue.indexWhere((t) => t.id == currentTrack.id);
+      queueIndex = currentQueue.indexWhere((t) => _isSameTrackId(t.id, currentTrack.id));
       if (queueIndex < 0) queueIndex = 0;
     }
 
     final action = JamAction(
-      id: '${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}',
+      id: _nextActionId(),
       type: JamActionType.syncState,
       track: currentTrack,
       positionMs: _playerController.position.inMilliseconds,
@@ -808,10 +1535,20 @@ class JamController extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
+  @override
   void dispose() {
+    _isDisposed = true;
     _stopHeartbeat();
     _initialSyncTimer?.cancel();
     _initialSyncTimer = null;
+    _hostFailoverTimer?.cancel();
+    _hostFailoverTimer = null;
     _playerController.removeListener(_onPlayerStateChanged);
     for (var sub in _subscriptions) {
       sub.cancel();

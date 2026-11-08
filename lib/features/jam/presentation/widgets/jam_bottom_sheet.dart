@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:nebula/features/jam/data/jam_service.dart';
 import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 import 'package:nebula/core/theme/app_theme.dart';
 import 'package:nebula/shared/widgets/widgets.dart';
@@ -37,7 +38,18 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
     super.dispose();
   }
 
+  String _formatErrorMessage(Object e, {required String prefix}) {
+    if (e is JamSessionNotFoundException) {
+      return 'ERR: ${e.message.toUpperCase()}';
+    }
+    if (e is ArgumentError) {
+      return 'ERR: ${(e.message ?? e.toString()).toString().toUpperCase()}';
+    }
+    return '$prefix: $e';
+  }
+
   Future<void> _createJam() async {
+    if (_isLoading) return;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -46,19 +58,22 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
     try {
       final jamCtrl = context.read<JamController>();
       final code = await jamCtrl.createJam();
+      if (!mounted) return;
       setState(() {
         _createdCode = code;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = 'FAILED TO CREATE JAM: $e';
+        _error = _formatErrorMessage(e, prefix: 'FAILED TO CREATE JAM');
         _isLoading = false;
       });
     }
   }
 
   Future<void> _joinJam() async {
+    if (_isLoading) return;
     final code = _codeController.text.trim().toUpperCase();
     if (code.length != 6) {
       setState(() => _error = 'ERR: CODE MUST BE 6 CHARACTERS');
@@ -73,16 +88,16 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
     try {
       final jamCtrl = context.read<JamController>();
       await jamCtrl.joinJam(code);
-      if (mounted) {
-        Navigator.pop(context); // Close bottom sheet
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const JamScreen()),
-        );
-      }
+      if (!mounted) return;
+      Navigator.pop(context); // Close bottom sheet
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const JamScreen()),
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = 'FAILED TO JOIN: $e';
+        _error = _formatErrorMessage(e, prefix: 'FAILED TO JOIN');
         _isLoading = false;
       });
     }
@@ -142,7 +157,7 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
         Text(
           'SYS: REALTIME_SYNC_MODULE',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.white.withOpacity(0.3),
+                color: Colors.white.withValues(alpha: 0.3),
                 fontSize: 10,
                 letterSpacing: 1.0,
               ),
@@ -163,7 +178,10 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
         Row(
           children: [
             Expanded(
-              child: Container(height: 1, color: Colors.white.withOpacity(0.1)),
+              child: Container(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -171,13 +189,16 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
                 'OR',
                 style: TextStyle(
                   fontFamily: 'Courier New',
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                   fontSize: 12,
                 ),
               ),
             ),
             Expanded(
-              child: Container(height: 1, color: Colors.white.withOpacity(0.1)),
+              child: Container(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
             ),
           ],
         ),
@@ -250,7 +271,7 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
         Text(
           'SYS: CHANNEL_ACTIVE',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppTheme.nebulaPurple.withOpacity(0.6),
+                color: AppTheme.nebulaPurple.withValues(alpha: 0.6),
                 fontSize: 10,
                 letterSpacing: 1.0,
               ),
@@ -264,10 +285,10 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
             decoration: BoxDecoration(
               border: Border.all(
-                color: AppTheme.nebulaPurple.withOpacity(0.4),
+                color: AppTheme.nebulaPurple.withValues(alpha: 0.4),
                 width: 1,
               ),
-              color: Colors.white.withOpacity(0.03),
+              color: Colors.white.withValues(alpha: 0.03),
             ),
             child: Text(
               _createdCode!,
@@ -323,7 +344,7 @@ class _JamBottomSheetState extends State<JamBottomSheet> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Courier New',
-              color: Colors.white.withOpacity(0.4),
+              color: Colors.white.withValues(alpha: 0.4),
               fontSize: 11,
             ),
           ),

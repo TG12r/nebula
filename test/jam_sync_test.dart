@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/features/jam/data/jam_service.dart';
 import 'package:nebula/features/jam/domain/entities/jam_participant.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
@@ -147,15 +146,30 @@ void main() {
   group('Latency Compensation & Drift Threshold Logic', () {
     test('Calculates expected position with latency compensation', () {
       const sentTimestamp = 100000;
-      const receiveTimestamp = 102500; // 2.5s network + processing delay
+      const receiveTimestamp = 101200; // 1.2s network transit delay
       const reportedPositionMs = 30000;
 
-      final latency = (receiveTimestamp - sentTimestamp).clamp(0, 5000);
+      final latency = (receiveTimestamp - sentTimestamp).clamp(0, 1500);
       int computeExpected(int reported, int ltc, bool playing) =>
           reported + (playing ? ltc : 0);
 
-      expect(computeExpected(reportedPositionMs, latency, true), 32500);
+      expect(computeExpected(reportedPositionMs, latency, true), 31200);
       expect(computeExpected(reportedPositionMs, latency, false), 30000);
+    });
+
+    test('Separates network transit latency from local stream loading duration to prevent clock-skew jumps', () {
+      // Suppose sender clock is 8 seconds behind receiver clock (clock skew = +8000ms)
+      // and local YouTube manifest resolution takes 1400ms on the receiver.
+      const sentTimestamp = 100000;
+      const actionArrivalMs = 108000; // 8000ms apparent transit due to clock skew
+      const loadElapsedMs = 1400; // Measured locally on receiver's own clock
+      const reportedPositionMs = 20000;
+
+      final transitMs = (actionArrivalMs - sentTimestamp).clamp(0, 1500);
+      expect(transitMs, 1500, reason: 'Clock skew is capped at 1500ms');
+
+      final expectedPos = reportedPositionMs + transitMs + loadElapsedMs;
+      expect(expectedPos, 22900, reason: 'Compensates capped transit + exact local loading time');
     });
 
     test('Drift threshold triggers seek only when drift exceeds 1200ms', () {
@@ -177,7 +191,7 @@ void main() {
     });
   });
 
-  group('JamParticipant Presence State', () {
+  group('JamParticipant Presence State & Deduplication', () {
     test('Correctly serializes and parses host and joined_at fields', () {
       final participant = JamParticipant(
         id: 'user_123',
@@ -210,9 +224,48 @@ void main() {
       expect(parsed.isHost, false);
       expect(parsed.joinedAt, 0);
     });
+
+    test('Deduplicates participant entries with identical user_id during reconnect overlap', () {
+      final rawEntries = [
+        const JamParticipant(id: 'user_1', username: 'Alice', isHost: false, joinedAt: 2000),
+        const JamParticipant(id: 'user_1', username: 'Alice', isHost: true, joinedAt: 1000),
+        const JamParticipant(id: 'user_2', username: 'Bob', isHost: false, joinedAt: 1500),
+      ];
+
+      final byId = <String, JamParticipant>{};
+      for (final p in rawEntries) {
+        final existing = byId[p.id];
+        if (existing == null ||
+            (p.isHost && !existing.isHost) ||
+            (p.joinedAt > 0 && (existing.joinedAt == 0 || p.joinedAt < existing.joinedAt))) {
+          byId[p.id] = p;
+        }
+      }
+
+      final deduped = byId.values.toList();
+      expect(deduped.length, 2);
+      final alice = deduped.firstWhere((p) => p.id == 'user_1');
+      expect(alice.isHost, true);
+      expect(alice.joinedAt, 1000);
+    });
   });
 
   group('Jam End-to-End Protocol & State Invariants', () {
+    test('Monotonic sequence counter guarantees unique action IDs within the same microsecond', () {
+      int seq = 0;
+      const fixedTimestampUs = 1700000000000000;
+      String nextId(String prefix) => '${prefix}_user1_${fixedTimestampUs}_${++seq}';
+
+      final ids = List.generate(100, (_) => nextId('act')).toSet();
+      expect(ids.length, 100, reason: 'All 100 rapid action IDs must be strictly unique');
+    });
+
+    test('JamSessionNotFoundException carries code and descriptive message', () {
+      const err = JamSessionNotFoundException('ABC123');
+      expect(err.code, 'ABC123');
+      expect(err.toString(), contains('ABC123'));
+    });
+
     test('Host failover promotes the oldest remaining participant by joinedAt', () {
       final participants = [
         JamParticipant(id: 'host_0', username: 'Host', isHost: true, joinedAt: 1000),
@@ -315,7 +368,7 @@ void main() {
       final payload = pulseAction.toPayload();
       final restored = JamAction.fromPayload(payload);
 
-      final latency = (guestReceivedMs - (restored.timestampMs ?? guestReceivedMs)).clamp(0, 5000);
+      final latency = (guestReceivedMs - (restored.timestampMs ?? guestReceivedMs)).clamp(0, 1500);
       expect(latency, 180);
 
       final expectedPos = (restored.positionMs ?? 0) + (restored.isPlaying == true ? latency : 0);
@@ -486,4 +539,3 @@ void main() {
     });
   });
 }
-
