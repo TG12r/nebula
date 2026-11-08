@@ -44,17 +44,28 @@ class DesktopIntegrationService {
       if (appData == null) return false;
 
       final startMenuPath = '$appData\\Microsoft\\Windows\\Start Menu\\Programs\\Nebula.lnk';
-      
-      final escapedExe = exePath.replaceAll("'", "''");
-      final escapedLnk = startMenuPath.replaceAll("'", "''");
+      final escapedExe = exePath.replaceAll('"', '""');
+      final escapedLnk = startMenuPath.replaceAll('"', '""');
+      final workingDir = File(exePath).parent.path.replaceAll('"', '""');
 
-      final shellCommand = 
-          "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$escapedLnk'); "
-          "\$s.TargetPath = '$escapedExe'; "
-          "\$s.WorkingDirectory = '${File(exePath).parent.path}'; "
-          "\$s.Save();";
+      // Use wscript.exe instead of powershell.exe to prevent any console window from popping up.
+      // wscript.exe is a GUI subsystem executable on Windows and executes completely silently.
+      final tempVbs = File('${Directory.systemTemp.path}\\nebula_sc_${DateTime.now().millisecondsSinceEpoch}.vbs');
+      final vbsCode = [
+        'Set ws = CreateObject("WScript.Shell")',
+        'Set lnk = ws.CreateShortcut("$escapedLnk")',
+        'lnk.TargetPath = "$escapedExe"',
+        'lnk.WorkingDirectory = "$workingDir"',
+        'lnk.Save'
+      ].join('\r\n');
 
-      final result = await Process.run('powershell', ['-Command', shellCommand]);
+      await tempVbs.writeAsString(vbsCode);
+      final result = await Process.run('wscript.exe', ['//Nologo', tempVbs.path]);
+      if (await tempVbs.exists()) {
+        try {
+          await tempVbs.delete();
+        } catch (_) {}
+      }
       return result.exitCode == 0;
     } catch (e) {
       debugPrint('Error creating Windows shortcut: $e');

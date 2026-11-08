@@ -20,7 +20,8 @@ migrate_working_dir/
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
 # is commented out by default.
-#.vscode/
+.vscode/
+.clangd
 
 # Environment variables
 .env
@@ -36,9 +37,35 @@ HOW-TO
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+
+# Build outputs
+build/
+installer/build
+installer/build-linux
 /android/build/
 /coverage/
+
+# C++ / CMake / Visual Studio
+.vs/
+*.vcxproj.user
+*.VC.db
+*.opendb
+CMakeUserPresets.json
+compile_commands.json
+
+# Binaries & Compiled objects
+*.obj
+*.o
+*.lib
+*.a
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+
+# ImGui runtime state
+imgui.ini
 
 # Symbolication related
 app.*.symbols
