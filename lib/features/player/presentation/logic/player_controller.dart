@@ -215,6 +215,34 @@ class PlayerController extends ChangeNotifier {
     await _repository.removeFromQueue(index);
   }
 
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    if (newIndex < 0 || newIndex > _queue.length) return;
+
+    final newQueue = List<Track>.from(_queue);
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = newQueue.removeAt(oldIndex);
+    newQueue.insert(newIndex, item);
+
+    _queue = newQueue;
+    notifyListeners();
+
+    int currentIdx = 0;
+    if (_currentTrack != null) {
+      final found = newQueue.indexWhere(
+        (t) => TrackSource.stripPrefix(t.id) == TrackSource.stripPrefix(_currentTrack!.id),
+      );
+      if (found != -1) currentIdx = found;
+    }
+
+    await _repository.updateQueuePreservingCurrent(
+      newQueue,
+      currentIndex: currentIdx,
+    );
+  }
+
   Future<void> clearQueue() async {
     _queue = [];
     _currentTrack = null;

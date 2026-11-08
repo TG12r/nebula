@@ -840,6 +840,41 @@ class JamController extends ChangeNotifier {
     }
   }
 
+  /// Reorder the queue from [oldIndex] to [newIndex], broadcasting the new queue.
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    _localActionDepth++;
+    try {
+      await _playerController.reorderQueue(oldIndex, newIndex);
+    } finally {
+      _localActionDepth--;
+    }
+
+    if (_isInJam && _playerController.queue.isNotEmpty) {
+      _recordLocalUserAction();
+      final current = _playerController.currentTrack;
+      int currentIdx = 0;
+      if (current != null) {
+        final foundIdx = _playerController.queue.indexWhere((t) => _isSameTrackId(t.id, current.id));
+        if (foundIdx != -1) {
+          currentIdx = foundIdx;
+        }
+      }
+      _lastTrackId = current?.id;
+      _lastIsPlaying = _playerController.isPlaying;
+      _broadcastAction(JamAction(
+        id: _nextActionId(),
+        type: JamActionType.setQueue,
+        track: current ?? _playerController.queue[currentIdx],
+        queue: _playerController.queue,
+        queueIndex: currentIdx,
+        positionMs: _playerController.position.inMilliseconds,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        isPlaying: _playerController.isPlaying,
+        senderId: _currentUserId,
+      ));
+    }
+  }
+
   /// Seek to position, broadcasting to all peers with timestamp.
   Future<void> seek(Duration position) async {
     _localActionDepth++;

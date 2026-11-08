@@ -209,6 +209,18 @@ class _MockPlayerController extends ChangeNotifier implements PlayerController {
   }
 
   @override
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    if (newIndex < 0 || newIndex > _queue.length) return;
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, item);
+    notifyListeners();
+  }
+
+  @override
   Future<void> clearQueue() async {
     clearCalled = true;
     _queue = [];
