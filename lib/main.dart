@@ -42,9 +42,13 @@ Future<void> main() async {
 
   // Initialize MediaKit ONLY on Linux
   if (Platform.isLinux) {
-    // Increase buffer size to 8MB to prevent stuttering
-    JustAudioMediaKit.bufferSize = 8 * 1024 * 1024;
-    JustAudioMediaKit.ensureInitialized();
+    try {
+      // Increase buffer size to 8MB to prevent stuttering
+      JustAudioMediaKit.bufferSize = 8 * 1024 * 1024;
+      JustAudioMediaKit.ensureInitialized();
+    } catch (e, st) {
+      debugPrint("Warning: JustAudioMediaKit failed to initialize on Linux (libmpv missing?): $e\n$st");
+    }
   }
 
   // Initialize Notifications

@@ -25,6 +25,8 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <poll.h>
+#include <cstring>
 #endif
 
 namespace fs = std::filesystem;
@@ -267,32 +269,68 @@ bool LauncherCore::extractReleaseZip(
         }
 #endif
 
-        // The release zip contains a root folder "windows/" or "linux/".
-        // Normalize layout by moving contents of that subfolder to targetAppDir.
-        std::string subFolderName = 
+        // Normalize layout if the release zip contains a wrapper folder ("windows", "linux", "bundle", "Release", etc.)
+        std::vector<std::string> candidateFolders = {
 #ifdef _WIN32
-            "windows";
+            "windows", "Release", "runner"
 #else
-            "linux";
+            "linux", "bundle", "Release"
 #endif
+        };
 
-        fs::path subPath = fs::path(targetAppDir) / subFolderName;
-        if (fs::exists(subPath) && fs::is_directory(subPath)) {
-            for (const auto& entry : fs::directory_iterator(subPath)) {
-                fs::path dest = fs::path(targetAppDir) / entry.path().filename();
-                if (fs::exists(dest)) {
-                    fs::remove_all(dest);
+        for (const auto& folder : candidateFolders) {
+            fs::path subPath = fs::path(targetAppDir) / folder;
+            if (fs::exists(subPath) && fs::is_directory(subPath)) {
+                for (const auto& entry : fs::directory_iterator(subPath)) {
+                    fs::path dest = fs::path(targetAppDir) / entry.path().filename();
+                    if (fs::exists(dest)) {
+                        fs::remove_all(dest);
+                    }
+                    fs::rename(entry.path(), dest);
                 }
-                fs::rename(entry.path(), dest);
+                fs::remove_all(subPath);
+                break;
             }
-            fs::remove_all(subPath);
+        }
+
+        // Fallback: check if the expected executable is located inside any single child directory
+        std::string expectedBinName = 
+#ifdef _WIN32
+            "nebula.exe";
+#else
+            "nebula";
+#endif
+        if (!fs::exists(fs::path(targetAppDir) / expectedBinName)) {
+            for (const auto& entry : fs::directory_iterator(targetAppDir)) {
+                if (entry.is_directory() && fs::exists(entry.path() / expectedBinName)) {
+                    for (const auto& subEntry : fs::directory_iterator(entry.path())) {
+                        fs::path dest = fs::path(targetAppDir) / subEntry.path().filename();
+                        if (fs::exists(dest)) {
+                            fs::remove_all(dest);
+                        }
+                        fs::rename(subEntry.path(), dest);
+                    }
+                    fs::remove_all(entry.path());
+                    break;
+                }
+            }
         }
 
 #ifndef _WIN32
-        // Set executable permission on extracted Linux binary
-        fs::path unpackedExe = fs::path(targetAppDir) / "nebula";
-        if (fs::exists(unpackedExe)) {
-            chmod(unpackedExe.c_str(), 0755);
+        // Ensure executable and read permissions on Linux binaries and shared libraries
+        std::error_code permEc;
+        for (const auto& entry : fs::recursive_directory_iterator(targetAppDir, permEc)) {
+            if (entry.is_directory()) {
+                chmod(entry.path().c_str(), 0755);
+            } else if (entry.is_regular_file()) {
+                std::string fname = entry.path().filename().string();
+                std::string ext = entry.path().extension().string();
+                if (fname == "nebula" || fname == "NebulaLauncher" || ext == ".so") {
+                    chmod(entry.path().c_str(), 0755);
+                } else {
+                    chmod(entry.path().c_str(), 0644);
+                }
+            }
         }
 #endif
 
@@ -419,30 +457,122 @@ bool LauncherCore::launchApp(const std::string& installDir, std::string& outErro
     }
     return true;
 #else
-    // Ensure executable permission is set before launching
+    // 1. Ensure executable permissions on executable and bundled shared libraries
     chmod(exePath.c_str(), 0755);
+    fs::path libDir = fs::path(appDir) / "lib";
+    if (fs::exists(libDir)) {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(libDir, ec)) {
+            if (entry.is_regular_file()) {
+                std::string ext = entry.path().extension().string();
+                if (ext == ".so" || entry.path().string().find(".so.") != std::string::npos) {
+                    chmod(entry.path().c_str(), 0755);
+                }
+            }
+        }
+    }
+
+    // 2. Create pipe with FD_CLOEXEC to catch execv failures immediately
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        pipefd[0] = -1;
+        pipefd[1] = -1;
+    } else {
+        fcntl(pipefd[0], F_SETFD, FD_CLOEXEC);
+        fcntl(pipefd[1], F_SETFD, FD_CLOEXEC);
+    }
 
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: create new independent session so it outlives the launcher
+        // Child process: create independent session so it outlives the launcher
         setsid();
         if (chdir(appDir.c_str()) != 0) {
             // continue even if chdir fails
         }
-        int devNull = open("/dev/null", O_RDWR);
-        if (devNull != -1) {
-            dup2(devNull, STDIN_FILENO);
-            dup2(devNull, STDOUT_FILENO);
-            dup2(devNull, STDERR_FILENO);
-            close(devNull);
+
+        // Configure LD_LIBRARY_PATH so bundled Flutter engine and plugins are always found
+        if (fs::exists(libDir)) {
+            const char* curLd = std::getenv("LD_LIBRARY_PATH");
+            std::string newLd = libDir.string();
+            if (curLd && *curLd) {
+                newLd += ":" + std::string(curLd);
+            }
+            setenv("LD_LIBRARY_PATH", newLd.c_str(), 1);
         }
+
+        // Redirect stdout & stderr to log file so launch crashes/errors are captured
+        fs::path logFile = fs::path(installDir) / "nebula_app.log";
+        int logFd = open(logFile.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (logFd != -1) {
+            dup2(logFd, STDOUT_FILENO);
+            dup2(logFd, STDERR_FILENO);
+            close(logFd);
+        }
+
+        if (pipefd[0] != -1) close(pipefd[0]);
+
         char* args[] = { const_cast<char*>(exePath.c_str()), nullptr };
         execv(exePath.c_str(), args);
+
+        // If execv failed, report error back to parent process
+        int err = errno;
+        if (pipefd[1] != -1) {
+            ssize_t w = write(pipefd[1], &err, sizeof(err));
+            (void)w;
+            close(pipefd[1]);
+        }
         _exit(127);
     } else if (pid < 0) {
-        outError = "Fallo al iniciar Nebula en Linux";
+        if (pipefd[0] != -1) close(pipefd[0]);
+        if (pipefd[1] != -1) close(pipefd[1]);
+        outError = "Fallo al iniciar Nebula en Linux (fork error: " + std::string(strerror(errno)) + ")";
         return false;
     }
+
+    // Parent process: close write end
+    if (pipefd[1] != -1) close(pipefd[1]);
+
+    // Check if execv reported an immediate error
+    if (pipefd[0] != -1) {
+        int childErr = 0;
+        struct pollfd pfd;
+        pfd.fd = pipefd[0];
+        pfd.events = POLLIN | POLLHUP;
+        int pollRes = poll(&pfd, 1, 300);
+
+        if (pollRes > 0) {
+            ssize_t bytesRead = read(pipefd[0], &childErr, sizeof(childErr));
+            if (bytesRead > 0 && childErr != 0) {
+                close(pipefd[0]);
+                outError = "Error al ejecutar Nebula: " + std::string(strerror(childErr));
+                return false;
+            }
+        }
+        close(pipefd[0]);
+    }
+
+    // Brief check (150ms) to see if process crashed on immediate startup
+    usleep(150000);
+    int status = 0;
+    pid_t waited = waitpid(pid, &status, WNOHANG);
+    if (waited == pid && WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+        fs::path logFile = fs::path(installDir) / "nebula_app.log";
+        std::string logDetail = "";
+        if (fs::exists(logFile)) {
+            std::ifstream lf(logFile.string());
+            std::string line;
+            while (std::getline(lf, line)) {
+                if (!line.empty()) logDetail = line;
+            }
+        }
+        if (!logDetail.empty()) {
+            outError = "Nebula se cerro al iniciar: " + logDetail;
+        } else {
+            outError = "Nebula se cerro inmediatamente con codigo " + std::to_string(WEXITSTATUS(status));
+        }
+        return false;
+    }
+
     return true;
 #endif
 }
