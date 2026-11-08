@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
 import 'package:nebula/features/jam/data/jam_service.dart';
@@ -25,13 +24,34 @@ class FakePlayerRepository implements PlayerRepository {
       BehaviorSubject<AudioProcessingState>.seeded(AudioProcessingState.idle);
 
   @override
-  Future<void> setQueue(List<Track> tracks, {int initialIndex = 0}) async {
+  Future<void> setQueue(
+    List<Track> tracks, {
+    int initialIndex = 0,
+    bool autoPlay = true,
+  }) async {
     lastSetQueueTracks = List.from(tracks);
     lastSetQueueInitialIndex = initialIndex;
     _queueController.add(List.unmodifiable(tracks));
     if (initialIndex >= 0 && initialIndex < tracks.length) {
       _currentTrackController.add(tracks[initialIndex]);
     }
+  }
+
+  @override
+  Future<void> updateQueuePreservingCurrent(
+    List<Track> tracks, {
+    required int currentIndex,
+  }) async {
+    lastSetQueueTracks = List.from(tracks);
+    lastSetQueueInitialIndex = currentIndex;
+    _queueController.add(List.unmodifiable(tracks));
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    lastSetQueueTracks = [];
+    lastSetQueueInitialIndex = -1;
+    _queueController.add(const []);
   }
 
   @override
@@ -103,12 +123,10 @@ class FakePlaybackHistoryRepository extends Fake implements PlaybackHistoryRepos
 class FakeJamService extends Fake implements JamService {
   final _actionController = StreamController<JamAction>.broadcast();
   JamAction? lastBroadcastAction;
+  int _seq = 0;
 
   @override
   Stream<JamAction> get onAction => _actionController.stream;
-
-  @override
-  Stream<JamAction> get actionStream => _actionController.stream;
 
   @override
   Stream<List<JamParticipant>> get participantsStream => const Stream.empty();
@@ -121,6 +139,9 @@ class FakeJamService extends Fake implements JamService {
 
   @override
   String get myUserId => 'test_user_id';
+
+  @override
+  String nextActionId([String prefix = 'act']) => '${prefix}_test_${++_seq}';
 
   @override
   Future<bool> broadcastAction(JamAction action, {int maxRetries = 3}) async {

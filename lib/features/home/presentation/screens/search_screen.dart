@@ -180,11 +180,12 @@ class _SearchScreenState extends State<SearchScreen> {
                   keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                   itemBuilder: (context, index) {
                     final video = state.searchResults[index];
-                    final isBufferingCurrent =
-                        state.isBuffering && state.activeTrackId == video.id;
+                    final isCurrent = state.activeTrackId != null &&
+                        TrackSource.stripPrefix(state.activeTrackId!) ==
+                            TrackSource.stripPrefix(video.id);
+                    final isBufferingCurrent = state.isBuffering && isCurrent;
                     final isLoading =
                         _loadingTrackId == video.id || isBufferingCurrent;
-                    final isCurrent = state.activeTrackId == video.id;
 
                     return NebulaTrackTile(
                       track: video,

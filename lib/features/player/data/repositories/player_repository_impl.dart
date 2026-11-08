@@ -12,7 +12,6 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 import 'package:nebula/features/downloads/domain/repositories/download_repository.dart';
 import 'package:nebula/features/settings/domain/repositories/settings_repository.dart';
-import 'package:nebula/core/enums/track_source.dart';
 import 'package:nebula/core/services/innertube_search_service.dart';
 import 'package:nebula/features/player/data/repositories/soundcloud_repository.dart';
 
@@ -45,7 +44,7 @@ class PlayerRepositoryImpl implements PlayerRepository {
   }
 
   void _initIndexListener() {
-    _audioHandler.internalPlayer.currentIndexStream.listen((playerIndex) {
+    _audioHandler.currentIndexStream.listen((playerIndex) {
       if (_isSettingQueue) return;
       if (playerIndex != null && _logicalQueue.isNotEmpty) {
         final newLogical = _startLogicalOffset + playerIndex;
@@ -70,7 +69,9 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
   @override
   Stream<Track?> get currentTrackStream => _audioHandler.mediaItem.map((item) {
-    if (item == null) return null;
+    if (item == null || item.id == NebulaAudioHandler.jamKeepaliveMediaId) {
+      return null;
+    }
     return _mediaItemToTrack(item);
   });
 
@@ -82,6 +83,16 @@ class PlayerRepositoryImpl implements PlayerRepository {
       .playbackState
       .map((state) => state.processingState)
       .distinct();
+
+  bool _isLocalFileSource(AudioSource source) {
+    return source is UriAudioSource && source.uri.isScheme('file');
+  }
+
+  Uri? _parseArtUri(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return null;
+    return Uri.tryParse(trimmed);
+  }
 
   @override
   Future<String?> play(Track track, {bool autoPlay = true}) async {
@@ -95,13 +106,32 @@ class PlayerRepositoryImpl implements PlayerRepository {
       _bufferedLogicalIndex = 0;
       _queueController.add(List.unmodifiable(_logicalQueue));
 
-      final source = await _createAudioSource(track);
+      AudioSource? source = await _createAudioSource(track);
       if (_queueGenerationId != currentId) return null;
       if (source == null) return "Could not extract audio URL";
 
-      await _audioHandler.setSourceList([source]);
+      try {
+        await _audioHandler.setSourceList([source]);
+      } catch (e) {
+        if (_isLocalFileSource(source)) {
+          debugPrint(
+            "Local file playback failed for ${track.title} ($e). Deleting corrupted download and falling back to online stream.",
+          );
+          await _downloadRepository.deleteTrack(track.id);
+          if (_queueGenerationId != currentId) return null;
+          source = await _createAudioSource(track, allowLocal: false);
+          if (_queueGenerationId != currentId) return null;
+          if (source == null) return "Could not extract audio URL";
+          await _audioHandler.setSourceList([source]);
+        } else {
+          rethrow;
+        }
+      }
+
       if (autoPlay) {
         await _audioHandler.play();
+      } else {
+        await _audioHandler.pause();
       }
       return null;
     } catch (e) {
@@ -113,7 +143,11 @@ class PlayerRepositoryImpl implements PlayerRepository {
   }
 
   @override
-  Future<void> setQueue(List<Track> tracks, {int initialIndex = 0}) async {
+  Future<void> setQueue(
+    List<Track> tracks, {
+    int initialIndex = 0,
+    bool autoPlay = true,
+  }) async {
     _queueGenerationId++;
     final currentId = _queueGenerationId;
 
@@ -128,35 +162,110 @@ class PlayerRepositoryImpl implements PlayerRepository {
 
     try {
       // 1. Immediate: Load ONLY the start track to play ASAP (minimal startup latency & CPU)
-      Track startTrack = _logicalQueue[_currentLogicalIndex];
-      AudioSource? startSource = await _createAudioSource(startTrack);
+      bool loaded = false;
 
-      // If start track is unavailable/blocked (e.g. video deleted/private), advance to next playable track
-      while (startSource == null && _currentLogicalIndex < _logicalQueue.length - 1) {
+      while (!loaded && _currentLogicalIndex < _logicalQueue.length) {
         if (_queueGenerationId != currentId) return;
-        _currentLogicalIndex++;
-        _startLogicalOffset = _currentLogicalIndex;
-        _bufferedLogicalIndex = _currentLogicalIndex;
-        startTrack = _logicalQueue[_currentLogicalIndex];
-        debugPrint('Track unplayable, advancing to next in queue: ${startTrack.title}');
-        startSource = await _createAudioSource(startTrack);
+        final startTrack = _logicalQueue[_currentLogicalIndex];
+        final startSource = await _createAudioSource(startTrack);
+        if (_queueGenerationId != currentId) return;
+
+        if (startSource != null) {
+          try {
+            _startLogicalOffset = _currentLogicalIndex;
+            await _audioHandler.setSourceList([startSource], initialIndex: 0);
+            loaded = true;
+          } catch (e) {
+            if (_isLocalFileSource(startSource)) {
+              debugPrint(
+                "Local file playback failed for ${startTrack.title} ($e). Deleting corrupted download and falling back to online stream.",
+              );
+              await _downloadRepository.deleteTrack(startTrack.id);
+              if (_queueGenerationId != currentId) return;
+              final onlineSource = await _createAudioSource(
+                startTrack,
+                allowLocal: false,
+              );
+              if (_queueGenerationId != currentId) return;
+              if (onlineSource != null) {
+                try {
+                  _startLogicalOffset = _currentLogicalIndex;
+                  await _audioHandler.setSourceList(
+                    [onlineSource],
+                    initialIndex: 0,
+                  );
+                  loaded = true;
+                } catch (onlineErr) {
+                  debugPrint(
+                    "Online fallback also failed for ${startTrack.title}: $onlineErr",
+                  );
+                }
+              }
+            } else {
+              debugPrint("Failed to load source for ${startTrack.title}: $e");
+            }
+          }
+        }
+
+        if (!loaded) {
+          if (_currentLogicalIndex < _logicalQueue.length - 1) {
+            _currentLogicalIndex++;
+            _startLogicalOffset = _currentLogicalIndex;
+            _bufferedLogicalIndex = _currentLogicalIndex;
+            debugPrint(
+              'Track unplayable, advancing to next in queue: ${_logicalQueue[_currentLogicalIndex].title}',
+            );
+          } else {
+            break;
+          }
+        }
       }
 
       if (_queueGenerationId != currentId) return;
 
-      if (startSource != null) {
-        _startLogicalOffset = _currentLogicalIndex;
-        await _audioHandler.setSourceList([startSource], initialIndex: 0);
-
+      if (loaded) {
         // 2. Pre-buffer up to 2 tracks ahead (sliding window) to maintain gapless playback
         _preloadUpcomingWindow(_currentLogicalIndex, currentId);
 
-        await _audioHandler.play();
+        if (autoPlay) {
+          await _audioHandler.play();
+        } else {
+          await _audioHandler.pause();
+        }
       }
     } finally {
       if (_queueGenerationId == currentId) {
         _isSettingQueue = false;
       }
+    }
+  }
+
+  @override
+  Future<void> updateQueuePreservingCurrent(
+    List<Track> tracks, {
+    required int currentIndex,
+  }) async {
+    if (tracks.isEmpty) {
+      await clearQueue();
+      return;
+    }
+
+    final clampedIdx = currentIndex.clamp(0, tracks.length - 1);
+    final currentInternal = _audioHandler.internalPlayer.currentIndex;
+
+    if (_audioHandler.internalPlayer.audioSource != null && currentInternal != null) {
+      _queueGenerationId++;
+      final currentId = _queueGenerationId;
+      _logicalQueue = List.from(tracks);
+      _currentLogicalIndex = clampedIdx;
+      _startLogicalOffset = clampedIdx - currentInternal;
+      _bufferedLogicalIndex = clampedIdx;
+      _queueController.add(List.unmodifiable(_logicalQueue));
+
+      await _audioHandler.removeUpcomingSourcesAfter(currentInternal);
+      _preloadUpcomingWindow(_currentLogicalIndex, currentId);
+    } else {
+      await setQueue(tracks, initialIndex: clampedIdx);
     }
   }
 
@@ -219,14 +328,50 @@ class PlayerRepositoryImpl implements PlayerRepository {
   @override
   Future<void> removeFromQueue(int index) async {
     if (index >= 0 && index < _logicalQueue.length) {
+      final internalOffset = index - _startLogicalOffset;
       _logicalQueue.removeAt(index);
+
+      if (_logicalQueue.isEmpty) {
+        _currentLogicalIndex = 0;
+        _startLogicalOffset = 0;
+        _bufferedLogicalIndex = 0;
+        _queueController.add(const []);
+        await _audioHandler.clearPlaylist();
+        return;
+      }
+
+      if (index < _currentLogicalIndex) {
+        _currentLogicalIndex--;
+      } else if (_currentLogicalIndex >= _logicalQueue.length) {
+        _currentLogicalIndex = _logicalQueue.length - 1;
+      }
+
+      if (index < _startLogicalOffset && _startLogicalOffset > 0) {
+        _startLogicalOffset--;
+      }
+      if (index <= _bufferedLogicalIndex && _bufferedLogicalIndex > 0) {
+        _bufferedLogicalIndex--;
+      }
+
       _queueController.add(List.unmodifiable(_logicalQueue));
 
-      final internalOffset = index - _startLogicalOffset;
       if (internalOffset >= 0 && internalOffset < _audioHandler.queue.value.length) {
         await _audioHandler.removeQueueItemAt(internalOffset);
       }
+
+      _ensureNextBuffered(_currentLogicalIndex, _queueGenerationId);
     }
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    _queueGenerationId++;
+    _logicalQueue = [];
+    _currentLogicalIndex = 0;
+    _startLogicalOffset = 0;
+    _bufferedLogicalIndex = 0;
+    _queueController.add(const []);
+    await _audioHandler.clearPlaylist();
   }
 
   @override
@@ -240,9 +385,18 @@ class PlayerRepositoryImpl implements PlayerRepository {
     ];
     _queueController.add(List.unmodifiable(_logicalQueue));
 
-    // Re-seed lookahead buffer from the new shuffled order
+    // Re-seed lookahead buffer from the new shuffled order without restarting current track
     _queueGenerationId++;
-    await setQueue(_logicalQueue, initialIndex: _currentLogicalIndex);
+    final currentId = _queueGenerationId;
+    final currentInternal = _audioHandler.internalPlayer.currentIndex;
+
+    if (_audioHandler.internalPlayer.audioSource != null && currentInternal != null) {
+      _bufferedLogicalIndex = _currentLogicalIndex;
+      await _audioHandler.removeUpcomingSourcesAfter(currentInternal);
+      _preloadUpcomingWindow(_currentLogicalIndex, currentId);
+    } else {
+      await setQueue(_logicalQueue, initialIndex: _currentLogicalIndex);
+    }
   }
 
   @override
@@ -358,42 +512,53 @@ class PlayerRepositoryImpl implements PlayerRepository {
       id: item.id,
       title: item.title,
       artist: item.artist ?? 'Unknown',
-      thumbnailUrl: item.artUri.toString(),
+      thumbnailUrl: item.artUri?.toString() ?? '',
       duration: item.duration ?? Duration.zero,
       source: TrackSource.fromId(item.id),
     );
   }
 
-  Future<AudioSource?> _createAudioSource(Track track) async {
+  Future<AudioSource?> _createAudioSource(
+    Track track, {
+    bool allowLocal = true,
+  }) async {
     try {
       // 1. Check Offline File
-      final localPath = _downloadRepository.getLocalPath(track.id);
-      if (localPath != null && File(localPath).existsSync()) {
-        final file = File(localPath);
-        final fileSize = await file.length();
+      if (allowLocal) {
+        final localPath = _downloadRepository.getLocalPath(track.id);
+        if (localPath != null && File(localPath).existsSync()) {
+          final file = File(localPath);
+          final fileSize = await file.length();
 
-        if (fileSize < 1024) {
-          debugPrint("Warning: Downloaded file too small (${fileSize}B), re-streaming: ${track.title}");
-        } else {
-          final firstBytes = await file.openRead(0, 10).fold<List<int>>(
-            [],
-            (prev, chunk) => prev..addAll(chunk),
-          );
-          final header = String.fromCharCodes(firstBytes).trim();
-
-          if (header.startsWith('#EXTM3U')) {
-            debugPrint("Warning: Downloaded file is HLS manifest, re-streaming: ${track.title}");
-          } else {
-            return AudioSource.file(
-              localPath,
-              tag: MediaItem(
-                id: track.storageId,
-                title: track.title,
-                artist: track.artist,
-                artUri: Uri.parse(track.thumbnailUrl),
-                duration: track.duration,
-              ),
+          if (fileSize < 10240) {
+            debugPrint(
+              "Warning: Downloaded file too small (${fileSize}B), deleting and re-streaming: ${track.title}",
             );
+            await _downloadRepository.deleteTrack(track.id);
+          } else {
+            final firstBytes = await file.openRead(0, 10).fold<List<int>>(
+              [],
+              (prev, chunk) => prev..addAll(chunk),
+            );
+            final header = String.fromCharCodes(firstBytes).trim();
+
+            if (header.startsWith('#EXTM3U')) {
+              debugPrint(
+                "Warning: Downloaded file is HLS manifest, deleting and re-streaming: ${track.title}",
+              );
+              await _downloadRepository.deleteTrack(track.id);
+            } else {
+              return AudioSource.file(
+                localPath,
+                tag: MediaItem(
+                  id: track.storageId,
+                  title: track.title,
+                  artist: track.artist,
+                  artUri: _parseArtUri(track.thumbnailUrl),
+                  duration: track.duration,
+                ),
+              );
+            }
           }
         }
       }
@@ -435,18 +600,14 @@ class PlayerRepositoryImpl implements PlayerRepository {
         id: track.storageId,
         title: track.title,
         artist: track.artist,
-        artUri: Uri.parse(track.thumbnailUrl),
+        artUri: _parseArtUri(track.thumbnailUrl),
         duration: track.duration,
       );
 
-      // LockCachingAudioSource uses a platform channel proxy that in just_audio_windows
-      // sends data on a background thread, triggering a Flutter Windows thread violation.
-      // Use LockCachingAudioSource on Android/iOS (mobile) and AudioSource.uri on desktop.
-      if (Platform.isAndroid || Platform.isIOS) {
-        return LockCachingAudioSource(uri, tag: mediaTag);
-      } else {
-        return AudioSource.uri(uri, tag: mediaTag);
-      }
+      // Use native AudioSource.uri across all platforms so ExoPlayer (Android)
+      // and native players handle HTTP Range requests on long 20+ minute tracks
+      // and HLS manifests directly without proxy stalls.
+      return AudioSource.uri(uri, tag: mediaTag);
     } catch (e) {
       debugPrint("Error extracting audio for ${track.title} (${track.source}): $e");
       return null;

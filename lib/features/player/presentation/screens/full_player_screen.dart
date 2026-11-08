@@ -579,7 +579,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                               index,
                             ) {
                               final track = queue[index];
-                              final isCurrent = track.id == currentTrackId;
+                              final isCurrent = currentTrackId != null && TrackSource.stripPrefix(track.id) == TrackSource.stripPrefix(currentTrackId);
 
                               return ListTile(
                                 dense: true,
@@ -623,7 +623,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                 ),
                                 onTap: () {
                                   if (!isCurrent) {
-                                    context.read<PlayerController>().skipToQueueItem(index);
+                                    context.read<JamController>().skipToQueueItem(index);
                                   }
                                 },
                                 trailing: IconButton(
@@ -633,7 +633,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                                     size: 20,
                                   ),
                                   onPressed: () =>
-                                      context.read<PlayerController>().removeFromQueue(index),
+                                      context.read<JamController>().removeFromQueue(index),
                                 ),
                               );
                             }, childCount: queue.length),

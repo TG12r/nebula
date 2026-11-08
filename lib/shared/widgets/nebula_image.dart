@@ -22,9 +22,27 @@ class NebulaImage extends StatelessWidget {
     this.errorBuilder,
   });
 
+  Widget _buildFallback() {
+    if (errorBuilder != null) return errorBuilder!;
+    return Container(
+      width: width,
+      height: height,
+      color: AppTheme.cmfDarkGrey,
+      child: const Center(
+        child: Icon(Icons.music_note, color: Colors.white24),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final quality = context.watch<SettingsController>().imageQuality;
+    if (url.trim().isEmpty) {
+      return _buildFallback();
+    }
+
+    final quality =
+        context.watch<SettingsController?>()?.imageQuality ??
+        ImageQuality.medium;
 
     final cacheWidth = _calculateCacheWidth(quality, isThumbnail);
 
@@ -34,17 +52,7 @@ class NebulaImage extends StatelessWidget {
       height: height,
       fit: fit,
       cacheWidth: cacheWidth,
-      errorBuilder: (context, error, stackTrace) {
-        if (errorBuilder != null) return errorBuilder!;
-        return Container(
-          width: width,
-          height: height,
-          color: AppTheme.cmfDarkGrey,
-          child: const Center(
-            child: Icon(Icons.music_note, color: Colors.white24),
-          ),
-        );
-      },
+      errorBuilder: (context, error, stackTrace) => _buildFallback(),
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded) return child;
         return AnimatedOpacity(

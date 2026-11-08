@@ -59,12 +59,16 @@ Future<void> main() async {
   );
 
   // Initialize Audio Handler Singleton
+  // androidStopForegroundOnPause: false keeps the Android Foreground Service and
+  // CPU WakeLock alive when playback is paused or while a Jam session is active
+  // in the background.
   final audioHandler = await AudioService.init(
     builder: () => NebulaAudioHandler(),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.nebula.channel.audio',
       androidNotificationChannelName: 'Nebula Music Playback',
-      androidNotificationOngoing: true,
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: false,
     ),
   );
 
@@ -144,7 +148,8 @@ class MainApp extends StatelessWidget {
         ), // Injected value
 
         Provider<FavoritesRepository>(
-          create: (_) => FavoritesRepositoryImpl(Supabase.instance.client, favoritesBox),
+          create: (_) =>
+              FavoritesRepositoryImpl(Supabase.instance.client, favoritesBox),
         ),
         Provider<PlaylistRepository>(
           create: (_) =>
@@ -196,7 +201,10 @@ class MainApp extends StatelessWidget {
 
         // Jam
         Provider<JamService>(
-          create: (_) => JamService(Supabase.instance.client),
+          create: (_) => JamService(
+            Supabase.instance.client,
+            audioHandler: audioHandler,
+          ),
           dispose: (_, service) => service.dispose(),
         ),
         ChangeNotifierProvider<JamController>(

@@ -1,4 +1,5 @@
 import 'package:nebula/core/enums/track_source.dart';
+export 'package:nebula/core/enums/track_source.dart';
 
 class Track {
   final String id;

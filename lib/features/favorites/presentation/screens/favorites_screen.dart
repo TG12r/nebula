@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:nebula/features/favorites/presentation/logic/favorites_controller.dart';
+import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/presentation/logic/player_controller.dart';
 import 'package:nebula/features/jam/presentation/logic/jam_controller.dart';
 import 'package:nebula/features/downloads/presentation/logic/download_controller.dart';
@@ -228,7 +229,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 return Selector<PlayerController, (String?, bool)>(
                                   selector: (_, p) => (p.currentTrack?.id, p.isPlaying),
                                   builder: (_, playState, __) {
-                                    final isCurrent = playState.$1 == track.id;
+                                    final isCurrent = playState.$1 != null &&
+                                        TrackSource.stripPrefix(playState.$1!) ==
+                                            TrackSource.stripPrefix(track.id);
                                     final isPlaying = isCurrent && playState.$2;
 
                                     return NebulaTrackTile(

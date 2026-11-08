@@ -237,7 +237,11 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                   onTap: () async {
+                    final jam = context.read<JamController>();
                     Navigator.pop(context);
+                    if (jam.isInJam) {
+                      await jam.leaveJam();
+                    }
                     await auth.signOut();
                     // Navigation to login is handled by AuthService stream in Main/Router
                     // But if MainScreen is top level, we might need to rely on stream listener in main.dart

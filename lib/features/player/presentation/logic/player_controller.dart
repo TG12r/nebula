@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:nebula/features/player/domain/entities/track.dart';
 import 'package:nebula/features/player/domain/repositories/player_repository.dart';
 import 'package:nebula/features/home/data/repositories/search_history_repository.dart';
-
 import 'package:nebula/features/home/data/repositories/playback_history_repository.dart';
 
 class PlayerController extends ChangeNotifier {
@@ -15,6 +14,7 @@ class PlayerController extends ChangeNotifier {
   // State
   bool _isPlaying = false;
   Track? _currentTrack;
+  String? _lastHistoryTrackId;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
@@ -100,9 +100,13 @@ class PlayerController extends ChangeNotifier {
     _subscriptions.add(
       _repository.currentTrackStream.listen((t) {
         // Auto-save to history when track changes
-        if (t != null && t.id != _currentTrack?.id) {
-          _playbackHistoryRepository.addToHistory(t);
-          _loadPlaybackHistory();
+        if (t != null) {
+          final rawId = TrackSource.stripPrefix(t.id);
+          if (rawId != _lastHistoryTrackId) {
+            _lastHistoryTrackId = rawId;
+            _playbackHistoryRepository.addToHistory(t);
+            _loadPlaybackHistory();
+          }
         }
 
         _currentTrack = t;
@@ -129,6 +133,9 @@ class PlayerController extends ChangeNotifier {
 
   // Actions forwarded to Repository
   Future<String?> playTrack(Track track, {bool autoPlay = true}) async {
+    _currentTrack = track;
+    _isPlaying = autoPlay;
+    notifyListeners();
     return await _repository.play(track, autoPlay: autoPlay);
   }
 
@@ -136,25 +143,49 @@ class PlayerController extends ChangeNotifier {
     List<Track> tracks, {
     int? initialIndex,
     bool shuffle = false,
+    bool autoPlay = true,
   }) async {
     if (tracks.isEmpty) return;
+
+    List<Track> effectiveTracks;
+    int startIdx;
 
     if (shuffle) {
       if (initialIndex != null && initialIndex >= 0 && initialIndex < tracks.length) {
         final selectedTrack = tracks[initialIndex];
         final remainingTracks = List<Track>.from(tracks)..removeAt(initialIndex);
         remainingTracks.shuffle();
-        await _repository.setQueue([selectedTrack, ...remainingTracks], initialIndex: 0);
+        effectiveTracks = [selectedTrack, ...remainingTracks];
+        startIdx = 0;
       } else {
-        final shuffled = List<Track>.from(tracks)..shuffle();
-        await _repository.setQueue(shuffled, initialIndex: 0);
+        effectiveTracks = List<Track>.from(tracks)..shuffle();
+        startIdx = 0;
       }
     } else {
-      await _repository.setQueue(
-        tracks,
-        initialIndex: (initialIndex ?? 0).clamp(0, tracks.length - 1),
-      );
+      effectiveTracks = tracks;
+      startIdx = (initialIndex ?? 0).clamp(0, tracks.length - 1);
     }
+
+    _queue = List.unmodifiable(effectiveTracks);
+    _currentTrack = effectiveTracks[startIdx];
+    _isPlaying = autoPlay;
+    notifyListeners();
+
+    await _repository.setQueue(
+      effectiveTracks,
+      initialIndex: startIdx,
+      autoPlay: autoPlay,
+    );
+  }
+
+  Future<void> updateQueuePreservingCurrent(
+    List<Track> tracks, {
+    required int currentIndex,
+  }) async {
+    await _repository.updateQueuePreservingCurrent(
+      tracks,
+      currentIndex: currentIndex,
+    );
   }
 
   Future<void> shuffleQueue() async {
@@ -169,6 +200,15 @@ class PlayerController extends ChangeNotifier {
     await _repository.removeFromQueue(index);
   }
 
+  Future<void> clearQueue() async {
+    _queue = [];
+    _currentTrack = null;
+    _isPlaying = false;
+    _position = Duration.zero;
+    notifyListeners();
+    await _repository.clearQueue();
+  }
+
   Future<void> skipToNext() async {
     await _repository.skipToNext();
   }
@@ -178,19 +218,24 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> skipToQueueItem(int index) async {
+    if (index >= 0 && index < _queue.length) {
+      _currentTrack = _queue[index];
+      _isPlaying = true;
+      notifyListeners();
+    }
     await _repository.skipToQueueItem(index);
   }
 
   Future<void> pause() async {
-    if (_isPlaying) {
-      await _repository.pause();
-    }
+    _isPlaying = false;
+    notifyListeners();
+    await _repository.pause();
   }
 
   Future<void> resume() async {
-    if (!_isPlaying) {
-      await _repository.resume();
-    }
+    _isPlaying = true;
+    notifyListeners();
+    await _repository.resume();
   }
 
   Future<void> togglePlay() async {
