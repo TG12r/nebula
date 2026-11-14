@@ -671,7 +671,8 @@ bool LauncherCore::terminateRunningApp(const std::string& installDir) {
     return terminated;
 #else
     (void)installDir;
-    (void)std::system("pkill -x nebula 2>/dev/null || killall -q nebula 2>/dev/null");
+    int res = std::system("pkill -x nebula 2>/dev/null || killall -q nebula 2>/dev/null");
+    (void)res;
     sleep(1);
     return true;
 #endif
